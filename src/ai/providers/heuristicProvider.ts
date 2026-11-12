@@ -19,7 +19,7 @@ export class HeuristicProvider implements AIProvider {
     // Build overall synopsis
     const fileCount = files.length;
     const synopsis = `This changeset in **${context.repoName}** (${context.branch || 'current branch'}) modifies ${fileCount} file${fileCount > 1 ? 's' : ''} with **+${totalAdditions} additions** and **-${totalDeletions} deletions**.\n\n` +
-      `The changes have been sequenced into a logical reading arc: starting with foundational schemas and business logic, progressing into endpoints and UI views, and concluding with verification tests.`;
+      `The changes are organized in a logical review sequence: starting with foundational schemas and contracts, progressing through core business logic and API endpoints, and concluding with UI views and verification tests.`;
 
     const chapters: Chapter[] = [];
 
@@ -32,11 +32,11 @@ export class HeuristicProvider implements AIProvider {
       // Analyze issues using static code smell rules
       const issues = this.detectStaticIssues(file);
 
-      // Construct narrative for this chapter
-      let narrative = `In this chapter, we inspect **${basename}**, which serves as the **${node.role}** of this feature. `;
+      // Construct technical explanation for this review step
+      let narrative = `**${basename}** serves as the **${node.role}** for this changeset. `;
       if (idx > 0) {
         const prev = orderedNodes[idx - 1];
-        narrative += `Following the updates in **${path.basename(prev.file.newPath || prev.file.oldPath)}**, `;
+        narrative += `Building upon the changes in **${path.basename(prev.file.newPath || prev.file.oldPath)}**, `;
       }
 
       if (file.status === 'added') {

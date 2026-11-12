@@ -32,13 +32,13 @@
     "commands": [
       {
         "command": "gitStory.openReview",
-        "title": "Review Changes with AI Story",
+        "title": "Review Changes in Logical Sequence",
         "category": "Git Story",
         "icon": "$(book)"
       },
       {
         "command": "gitStory.refresh",
-        "title": "Refresh Story Changes",
+        "title": "Refresh Review Changes",
         "category": "Git Story",
         "icon": "$(refresh)"
       },
@@ -96,7 +96,7 @@
             "Offline heuristic mode only (topological sort + rule-based linting)"
           ],
           "default": "auto",
-          "description": "AI provider used to sequence and narrate code review stories."
+          "description": "AI provider used to sequence and explain code review changes."
         },
         "gitStory.geminiModel": {
           "type": "string",
@@ -143,12 +143,13 @@
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "test": "node --test dist/test/*.test.js",
-    "package": "vsce package"
+    "package": "vsce package --skip-license --no-dependencies"
   },
   "devDependencies": {
     "@types/diff": "^5.2.3",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^4.1.0",
     "diff": "^5.2.0",
     "esbuild": "^0.23.0",
     "typescript": "^5.5.2"

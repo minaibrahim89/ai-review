@@ -11,7 +11,7 @@ export interface IssueCallout {
   suggestion?: string;
 }
 
-export interface Chapter {
+export interface ReviewStep {
   index: number;
   filePath: string;
   title: string;
@@ -24,10 +24,13 @@ export interface Chapter {
   diffFile?: DiffFile;
 }
 
+// Backward-compatible alias
+export type Chapter = ReviewStep;
+
 export interface StoryNarrative {
   title: string;
   synopsis: string;
-  chapters: Chapter[];
+  chapters: ReviewStep[];
   suggestedCommitMessage: string;
 }
 

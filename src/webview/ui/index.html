@@ -18,13 +18,13 @@
           <span class="story-brand">Git Story</span>
           <span class="story-divider">/</span>
           <span id="repo-branch" class="repo-badge">main</span>
-          <span id="story-title" class="story-title-text">Loading Review Story...</span>
+          <span id="story-title" class="story-title-text">Loading Review Walkthrough...</span>
         </div>
       </div>
 
       <div class="header-center">
         <div class="chapter-progress-container">
-          <span id="chapter-counter" class="chapter-counter">Chapter 1 of 1</span>
+          <span id="chapter-counter" class="chapter-counter">Step 1 of 1</span>
           <div class="progress-bar-track">
             <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%"></div>
           </div>
@@ -80,19 +80,19 @@
         <div class="spine-line"></div>
       </div>
 
-      <!-- Right Page: The AI Story & Insights -->
+      <!-- Right Page: The AI Review & Insights -->
       <section class="book-page right-page" id="right-page">
         <div class="page-header">
           <div class="chapter-badge-wrapper">
             <span id="chapter-role-badge" class="role-badge">Core Engine</span>
-            <span id="ai-provider-badge" class="provider-badge">AI Story</span>
+            <span id="ai-provider-badge" class="provider-badge">AI Review</span>
           </div>
-          <button id="synopsis-toggle-btn" class="action-btn-subtle">Prologue</button>
+          <button id="synopsis-toggle-btn" class="action-btn-subtle">Overview</button>
         </div>
 
         <div class="story-scroll-viewport" id="story-viewport">
           <div class="story-prose">
-            <h2 id="chapter-title" class="chapter-headline">The New Data Contract</h2>
+            <h2 id="chapter-title" class="chapter-headline">Review Step</h2>
             
             <div class="story-narrative-box">
               <p id="chapter-narrative" class="chapter-narrative-text">
@@ -118,7 +118,7 @@
 
             <!-- Interactive AI Question Box -->
             <div class="ask-ai-section">
-              <h4 class="section-label">Ask AI About This Chapter</h4>
+              <h4 class="section-label">Ask AI About This File</h4>
               <div class="ask-ai-input-wrapper">
                 <input type="text" id="ask-ai-input" placeholder="e.g. Is this backward-compatible? Can this leak memory?" />
                 <button id="ask-ai-submit-btn" class="ask-btn">Ask</button>
@@ -135,8 +135,8 @@
     <!-- Bottom Navigation Bar -->
     <footer class="story-footer">
       <div class="footer-left">
-        <button id="prev-chapter-btn" class="nav-btn" title="Previous Chapter ([ or J)">
-          &larr; Previous Chapter
+        <button id="prev-chapter-btn" class="nav-btn" title="Previous File ([ or J)">
+          &larr; Previous File
         </button>
       </div>
 
@@ -149,8 +149,8 @@
       </div>
 
       <div class="footer-right">
-        <button id="next-chapter-btn" class="nav-btn primary" title="Next Chapter (] or K)">
-          Next Chapter &rarr;
+        <button id="next-chapter-btn" class="nav-btn primary" title="Next File (] or K)">
+          Next File &rarr;
         </button>
         <button id="finish-commit-btn" class="nav-btn commit-cta" style="display: none;" title="Finish Review and Commit">
           Finish &amp; Commit
@@ -161,7 +161,7 @@
     <!-- Slide-Out Table of Contents Drawer -->
     <aside id="toc-drawer" class="toc-drawer">
       <div class="toc-header">
-        <h3>Story Chapters</h3>
+        <h3>Review Sequence</h3>
         <button id="close-toc-btn" class="icon-btn">&times;</button>
       </div>
       <div class="toc-list" id="toc-list">
@@ -170,11 +170,11 @@
     </aside>
     <div id="drawer-backdrop" class="drawer-backdrop"></div>
 
-    <!-- Prologue / Synopsis Modal -->
+    <!-- Overview Modal -->
     <div id="synopsis-modal" class="modal-backdrop">
       <div class="modal-card">
         <div class="modal-header">
-          <h3 id="synopsis-modal-title">Changeset Synopsis</h3>
+          <h3 id="synopsis-modal-title">Changeset Overview</h3>
           <button id="close-synopsis-btn" class="icon-btn">&times;</button>
         </div>
         <div class="modal-body">

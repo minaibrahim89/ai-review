@@ -201,7 +201,7 @@ export class ReviewPanel {
   }
 
   public async refresh() {
-    this.postMessage({ type: 'loading', payload: { message: 'Refreshing changes and regenerating story...' } });
+    this.postMessage({ type: 'loading', payload: { message: 'Refreshing changes and re-evaluating review sequence...' } });
     this.repos = await this.gitService.getRepositories();
     if (this.repos.length > 0 && !this.currentRepo) {
       this.currentRepo = this.repos[0];
@@ -212,7 +212,7 @@ export class ReviewPanel {
   private async loadStory() {
     if (!this.currentRepo) return;
 
-    this.postMessage({ type: 'loading', payload: { message: 'Analyzing diffs and sequencing narrative chapters...' } });
+    this.postMessage({ type: 'loading', payload: { message: 'Analyzing diffs and organizing review sequence...' } });
 
     try {
       const rawDiff = await this.gitService.getDiff(this.currentRepo.rootUri, undefined, this.currentScope);

@@ -56,28 +56,29 @@ export class GeminiProvider implements AIProvider {
 ${hunksText}`;
     }).join('\n\n');
 
-    const systemPrompt = `You are an elite code reviewer and technical storyteller.
-Your task is to take a set of uncommitted Git changes and craft an aesthetically pleasing, calm, distraction-free "Story" of the review.
+    const systemPrompt = `You are a principal engineer conducting a structured code review walkthrough.
+Your task is to organize uncommitted Git changes into an optimal, logical review sequence (foundations/contracts first, then business logic, then API endpoints, UI, and tests/configuration), so the reviewer can understand the changes in a clear, logical progression.
 
-Guidelines:
-1. Figure out the best narrative reading order for the human reviewer (foundations/contracts first, then business logic, then API, then UI, then tests).
-2. The narrative should read like an engaging, clear technical story where each file is a "Chapter" building logically upon previous chapters.
-3. For each chapter, highlight real potential issues, bugs, race conditions, edge cases, missing null checks, security concerns, or performance regressions with the exact line number where possible.
-4. Provide a suggested conventional commit message.
+CRITICAL INSTRUCTIONS:
+1. Do NOT write fiction, novel-like prose, or dramatized story text.
+2. Do NOT use book metaphors, "chapters", "prologues", "acts", or phrases like "In Chapter 1, we...".
+3. Instead, guide the reviewer through each changed file in a logical technical sequence. Explain why each file changed, how it connects to and builds upon preceding changes in this sequence, and what specifically needs attention.
+4. For each file/step, highlight real potential issues: bugs, race conditions, edge cases, missing null/error handling, security vulnerabilities, or performance regressions with exact line numbers where possible.
+5. Provide a suggested conventional commit message.
 
 Return strictly valid JSON with this schema:
 {
-  "title": "A concise, engaging title for the entire changeset story",
-  "synopsis": "A 1-2 paragraph executive prologue explaining the overarching intent and architectural impact",
+  "title": "A concise, professional technical summary title for the changeset",
+  "synopsis": "A 1-2 paragraph architectural overview explaining the overarching intent and impact of these changes",
   "suggestedCommitMessage": "feat(scope): conventional commit message with bullet points",
   "chapters": [
     {
       "filePath": "relative/path/to/file",
-      "title": "Chapter title (e.g. The New Data Contract)",
-      "role": "Architectural role (e.g. Database Schema, Core Business Logic, UI Component)",
-      "summary": "Brief 1-line summary of changes",
-      "narrative": "A clean, well-written story explaining why this file changed, how it connects to prior chapters, and what to pay attention to.",
-      "keyPoints": ["Bullet point 1", "Bullet point 2"],
+      "title": "Concise technical title for this step (e.g. Session Model Definition, Redis Fallback Cache Handler)",
+      "role": "Architectural layer/role (e.g. Data Contract & Schema, Core Business Logic, UI Component, Unit Test)",
+      "summary": "Brief 1-line technical summary of changes",
+      "narrative": "A cohesive, professional technical explanation of why this file changed, how it builds on earlier changes in this sequence, and what the reviewer should verify.",
+      "keyPoints": ["Key change or design decision 1", "Key change or design decision 2"],
       "issues": [
         {
           "id": "iss-1",
@@ -171,7 +172,7 @@ Return strictly valid JSON with this schema:
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const prompt = `You are assisting a developer reviewing file "${chapter.filePath}" (${chapter.role}).
-Narrative Context: ${chapter.narrative}
+Review Walkthrough Context: ${chapter.narrative}
 
 Diff snippet:
 ${diffSnippet}

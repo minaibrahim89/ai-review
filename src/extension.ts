@@ -22,8 +22,8 @@ export function activate(context: vscode.ExtensionContext) {
     100
   );
   statusBarItem.command = 'gitStory.openReview';
-  statusBarItem.text = '$(book) Review Story';
-  statusBarItem.tooltip = 'Read uncommitted Git changes as an AI story';
+  statusBarItem.text = '$(book) Review Changes';
+  statusBarItem.tooltip = 'Review uncommitted Git changes in a logical sequence';
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 

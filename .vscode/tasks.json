@@ -9,6 +9,15 @@
         "isDefault": true
       },
       "problemMatcher": "$tsc"
+    },
+    {
+      "label": "Build VSIX",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "package"],
+      "group": "build",
+      "problemMatcher": []
     }
+
   ]
 }

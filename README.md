@@ -1,34 +1,34 @@
-# Git Story: AI-Driven Narrative Code Review for VS Code
+# Git Story: AI-Driven Logical Code Review for VS Code
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-^1.90.0-blue.svg)](https://marketplace.visualstudio.com/)
 
-**Git Story** turns reviewing your uncommitted Git changes before commit into an aesthetically pleasing, calm, distraction-free story.
+**Git Story** turns reviewing your uncommitted Git changes into an intuitive, logically sequenced walkthrough.
 
-Instead of an overwhelming, alphabetical doom-scroll of diffs, Git Story acts as an editorial AI review assistant:
-- **Intelligent Narrative Sequencing**: Automatically figures out the optimal cognitive order to read the changes (Foundations & Schema &rarr; Core Business Logic &rarr; API & Handlers &rarr; UI Components &rarr; Tests & Verification).
-- **Two-Page Book Reader**:
-  - **Left Page**: Distraction-free, syntax-highlighted diff with line numbers and word-level diffing.
-  - **Right Page**: An AI-narrated story chapter explaining *why* the file changed in the context of the overall mission, connecting it with previous chapters, and highlighting potential issues (bugs, regressions, unhandled edge cases, missing null checks, security flags).
-- **Interactive Issue Jump Links**: Clicking any issue or watch-out badge smoothly scrolls the left page directly to that line with a soft, pulsing golden highlight.
+Instead of an overwhelming, alphabetical doom-scroll of diffs, Git Story acts as an architectural code review guide:
+- **Logical Cognitive Sequencing**: Automatically determines the optimal order to review changes (Foundations & Schema &rarr; Core Business Logic &rarr; API & Handlers &rarr; UI Components &rarr; Tests & Verification), similar to how logical narratives progress from premise to implementation to verification.
+- **Dual-Pane Review Reader**:
+  - **Left Pane**: Distraction-free, syntax-highlighted diff with line numbers and word-level diffing.
+  - **Right Pane**: An AI-guided technical walkthrough explaining *why* each file changed, how it builds on preceding changes in the sequence, and highlighting potential issues (bugs, regressions, unhandled edge cases, missing null checks, security flags).
+- **Interactive Issue Jump Links**: Clicking any issue or watch-out badge smoothly scrolls the diff directly to that line with a soft highlight.
 - **Interactive AI Questioning**: Ask follow-up questions about any file directly in the reader (*"Is this backward-compatible?", "Can this cause a memory leak?"*).
-- **One-Click Conventional Commit**: Generates an intelligent conventional commit message summarizing the full review arc.
+- **One-Click Conventional Commit**: Generates an intelligent conventional commit message summarizing the full review progression.
 
 ---
 
-## 📖 The Two-Page Zen Reader
+## 📖 The Dual-Pane Review Reader
 
 ```
 +----------------------------------------------------------------------------------------------------+
-|  [TOC]  Chapter 2 of 5: User Session Cache              [All Changes v]  [Split Diff]  [Stage File] |
+|  [TOC]  Step 2 of 5: User Session Cache                 [All Changes v]  [Split Diff]  [Stage File] |
 +--------------------------------------------------+-------------------------------------------------+
-|  LEFT PAGE: Clean Diff                           |  RIGHT PAGE: The AI Story & Insights            |
+|  LEFT PANE: Clean Diff                           |  RIGHT PANE: Review Walkthrough & Insights      |
 |                                                  |                                                 |
-|  src/services/session.service.ts                 |  The Narrative Arc                              |
-|  @@ -14,6 +14,15 @@                             |  In Chapter 1, we introduced the UserSession    |
-|   import { CacheClient } from './cache';         |  interface. Here, we implement a resilient      |
-|  +export class SessionService {                  |  redis fallback so that auth tokens survive     |
-|  +  async getSession(id: string) {               |  cluster restarts.                              |
+|  src/services/session.service.ts                 |  Walkthrough & Context                          |
+|  @@ -14,6 +14,15 @@                             |  Building on the UserSession model introduced   |
+|   import { CacheClient } from './cache';         |  in step 1, this implements a resilient redis   |
+|  +export class SessionService {                  |  fallback so that auth tokens survive cluster   |
+|  +  async getSession(id: string) {               |  restarts.                                      |
 |  +    const hit = await redis.get(id);           |                                                 |
 |  +    if (!hit) return db.fetch(id);    [!] L19  |  Potential Issues & Considerations              |
 |  +    return JSON.parse(hit);                    |  * [Warning] L19: JSON.parse on malformed cache |
@@ -37,7 +37,7 @@ Instead of an overwhelming, alphabetical doom-scroll of diffs, Git Story acts as
 |                                                  |                                                 |
 |                                                  |  [Ask AI about this file...]                    |
 +--------------------------------------------------+-------------------------------------------------+
-|  [< Previous Chapter]              [Mark as Reviewed [x]]                    [Next Chapter >]      |
+|  [< Previous File]                 [Mark as Reviewed [x]]                       [Next File >]      |
 +----------------------------------------------------------------------------------------------------+
 ```
 
@@ -45,7 +45,7 @@ Instead of an overwhelming, alphabetical doom-scroll of diffs, Git Story acts as
 
 ## ⚡ Key Features
 
-1. **Cognitive Narrative Order**:
+1. **Cognitive Sequencing**:
    In Git, files are usually sorted alphabetically (`a/...`, `b/...`), forcing you to read random tests or UI components before you even know what the underlying data models changed to. Git Story uses topological sorting and dependency analysis to order files by semantic layers.
 
 2. **AI Provider Flexibility**:
@@ -59,13 +59,13 @@ Instead of an overwhelming, alphabetical doom-scroll of diffs, Git Story acts as
    - Matches VS Code's active theme natively using VS Code CSS variables.
    - Soft tint diff highlighting (no harsh neon blocks).
    - Word-level intra-line highlights.
-   - Chapter reading progress bar (`Chapter 3 of 6`).
-   - Slide-out Table of Contents (TOC) drawer.
+   - Review sequence progress bar (`Step 3 of 6`).
+   - Slide-out Review Sequence (TOC) drawer.
 
 4. **Keyboard-First Workflow**:
-   - `[` or `J`: Previous chapter
-   - `]` or `K`: Next chapter
-   - `T`: Toggle Table of Contents
+   - `[` or `J`: Previous file
+   - `]` or `K`: Next file
+   - `T`: Toggle Review Sequence drawer
    - `M`: Toggle "Mark as Reviewed"
    - `R`: Refresh working tree changes
 
@@ -73,10 +73,20 @@ Instead of an overwhelming, alphabetical doom-scroll of diffs, Git Story acts as
 
 ## 🚀 Getting Started
 
-1. Click the **`$(book) Review Story`** item in the VS Code status bar (or open the Command Palette `Ctrl+Shift+P` / `Cmd+Shift+P` and type `Git Story: Review Changes with AI Story`).
+1. Click the **`$(book) Review Changes`** item in the VS Code status bar (or open the Command Palette `Ctrl+Shift+P` / `Cmd+Shift+P` and type `Git Story: Review Changes in Logical Sequence`).
 2. Git Story scans your active Git repository's working tree (staged & unstaged changes).
-3. Read through the changes in the two-page book reader.
+3. Walk through the changes in logical sequence in the review reader.
 4. When finished, click **Finish & Commit** to create your commit with an AI-synthesized conventional commit message!
+
+---
+
+## Building a Local VSIX
+
+Requires Node.js 22 or later. Run `npm install` once, then choose **Terminal > Run Task > Build VSIX** in VS Code, or run `npm run package`.
+
+The task compiles the extension and creates `git-story-<version>.vsix` in the project root. Install it using **Extensions > ... > Install from VSIX...**.
+
+Packaging skips the missing license-file check and excludes runtime dependency folders because esbuild bundles the extension.
 
 ---
 

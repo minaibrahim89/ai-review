@@ -64,20 +64,28 @@ export class OpenAIProvider implements AIProvider {
 ${hunksText}`;
     }).join('\n\n');
 
-    const prompt = `You are a senior software architect creating an aesthetically pleasing code review story.
-Organize these changes into an optimal reading order.
+    const prompt = `You are a principal engineer conducting a structured code review walkthrough.
+Organize these uncommitted Git changes into an optimal, logical review sequence (data contracts/schemas first, then business logic, then API endpoints, UI, and tests/config).
+
+CRITICAL INSTRUCTIONS:
+1. Do NOT write fiction, novel-like prose, or dramatized story text.
+2. Do NOT use book metaphors, "chapters", "prologues", "acts", or phrases like "In Chapter 1, we...".
+3. Instead, guide the reviewer through each changed file in a logical technical sequence. Explain why each file changed, how it connects to and builds upon preceding changes in this sequence, and what specifically needs attention.
+4. For each file/step, highlight real potential issues: bugs, race conditions, edge cases, missing null/error handling, security vulnerabilities, or performance regressions with exact line numbers where possible.
+5. Provide a suggested conventional commit message.
+
 Respond strictly in valid JSON:
 {
-  "title": "Story Title",
-  "synopsis": "Overview paragraph",
-  "suggestedCommitMessage": "feat: conventional commit message",
+  "title": "A concise, professional technical summary title for the changeset",
+  "synopsis": "A 1-2 paragraph architectural overview explaining the overarching intent and impact of these changes",
+  "suggestedCommitMessage": "feat(scope): conventional commit message with bullet points",
   "chapters": [
     {
       "filePath": "relative/file/path",
-      "title": "Chapter title",
-      "role": "Role (e.g. Data Contract, Core Business Logic, UI)",
-      "summary": "1-sentence summary",
-      "narrative": "Story paragraph explaining why this changed and connecting to previous chapters",
+      "title": "Concise technical title for this step (e.g. Session Model Definition, Redis Fallback Cache Handler)",
+      "role": "Architectural layer/role (e.g. Data Contract & Schema, Core Business Logic, UI Component, Unit Test)",
+      "summary": "Brief 1-line technical summary of changes",
+      "narrative": "A cohesive, professional technical explanation of why this file changed, how it builds on earlier changes in this sequence, and what the reviewer should verify.",
       "keyPoints": ["Key change 1", "Key change 2"],
       "issues": [
         {
@@ -148,7 +156,7 @@ ${diffSummaries}`;
     });
 
     return {
-      title: parsed.title || 'Review Story',
+      title: parsed.title || 'Review Walkthrough',
       synopsis: parsed.synopsis || '',
       suggestedCommitMessage: parsed.suggestedCommitMessage || 'feat: update changes',
       chapters,

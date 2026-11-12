@@ -279,7 +279,7 @@ function renderAll() {
     return;
   }
 
-  elements.storyTitle.textContent = state.story.title || 'Review Story';
+  elements.storyTitle.textContent = state.story.title || 'Review Walkthrough';
   elements.repoBranch.textContent = state.currentRepo?.headBranch || 'working-tree';
   elements.aiProviderBadge.textContent = state.providerName;
   elements.synopsisText.textContent = state.story.synopsis;
@@ -312,7 +312,7 @@ function renderChapter() {
   const currentIdx = state.currentChapterIndex;
 
   // Header progress
-  elements.chapterCounter.textContent = `Chapter ${currentIdx + 1} of ${total}`;
+  elements.chapterCounter.textContent = `Step ${currentIdx + 1} of ${total}`;
 
   // Left Page: File Header
   elements.filePath.textContent = current.filePath;
@@ -476,7 +476,7 @@ function renderToc() {
     item.className = `toc-item ${idx === state.currentChapterIndex ? 'active' : ''}`;
     item.innerHTML = `
       <div class="toc-item-header">
-        <span class="toc-item-num">Chapter ${idx + 1}</span>
+        <span class="toc-item-num">Step ${idx + 1}</span>
         ${ch.isReviewed ? '<span class="toc-item-status">✓ Reviewed</span>' : ''}
       </div>
       <div class="toc-item-title">${escapeHtml(ch.title)}</div>
