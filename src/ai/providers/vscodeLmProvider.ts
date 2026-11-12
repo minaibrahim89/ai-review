@@ -21,7 +21,7 @@ export class VSCodeLMProvider implements AIProvider {
 
   private async getChatModel(): Promise<vscode.LanguageModelChat | undefined> {
     try {
-      const models = await vscode.lm.selectChatModels({ family: 'gpt-4o' });
+      const models = await vscode.lm.selectChatModels({ family: 'gpt-6-luna' });
       if (models.length > 0) return models[0];
 
       const anyModels = await vscode.lm.selectChatModels();
