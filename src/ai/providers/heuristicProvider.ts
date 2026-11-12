@@ -33,18 +33,18 @@ export class HeuristicProvider implements AIProvider {
       const issues = this.detectStaticIssues(file);
 
       // Construct technical explanation for this review step
-      let narrative = `**${basename}** serves as the **${node.role}** for this changeset. `;
+      let narrative = `\`${basename}\` serves as the **${node.role}** for this changeset. `;
       if (idx > 0) {
         const prev = orderedNodes[idx - 1];
-        narrative += `Building upon the changes in **${path.basename(prev.file.newPath || prev.file.oldPath)}**, `;
+        narrative += `Building upon the changes in \`${path.basename(prev.file.newPath || prev.file.oldPath)}\`, `;
       }
 
       if (file.status === 'added') {
-        narrative += `this is a newly introduced module adding ${file.additions} lines of logic.`;
+        narrative += `this is a newly introduced module adding \`+${file.additions}\` lines of logic.`;
       } else if (file.status === 'deleted') {
-        narrative += `this module has been removed, pruning ${file.deletions} obsolete lines.`;
+        narrative += `this module has been removed, pruning \`-${file.deletions}\` obsolete lines.`;
       } else {
-        narrative += `this file receives targeted adjustments (+${file.additions} / -${file.deletions}).`;
+        narrative += `this file receives targeted adjustments (+\`${file.additions}\` / -\`${file.deletions}\`).`;
       }
 
       const keyPoints = this.summarizeKeyPoints(file);
@@ -78,10 +78,10 @@ export class HeuristicProvider implements AIProvider {
     const qLower = question.toLowerCase();
     if (qLower.includes('issue') || qLower.includes('bug')) {
       if (chapter.issues.length === 0) {
-        return `Heuristic check: No automated code smells or security flags were detected in ${chapter.filePath}. The diff appears clean.`;
+        return `Heuristic check: No automated code smells or security flags were detected in \`${chapter.filePath}\`. The diff appears clean.`;
       }
-      return `Potential items to review in ${chapter.filePath}:\n` +
-        chapter.issues.map(i => `- [${i.severity.toUpperCase()}] Line ${i.lineNumber || '?'}: ${i.title} - ${i.description}`).join('\n');
+      return `Potential items to review in \`${chapter.filePath}\`:\n` +
+        chapter.issues.map(i => `- [${i.severity.toUpperCase()}] Line \`${i.lineNumber || '?'}\`: **${i.title}** - ${i.description}`).join('\n');
     }
 
     if (qLower.includes('why') || qLower.includes('summary')) {
@@ -89,7 +89,7 @@ export class HeuristicProvider implements AIProvider {
         chapter.keyPoints.map(p => `- ${p}`).join('\n');
     }
 
-    return `Heuristic analysis: ${chapter.filePath} (${chapter.role}) has ${chapter.diffFile?.additions || 0} additions and ${chapter.diffFile?.deletions || 0} deletions. Configure a Gemini or VS Code LM provider in settings for deep interactive Q&A.`;
+    return `Heuristic analysis: \`${chapter.filePath}\` (${chapter.role}) has \`+${chapter.diffFile?.additions || 0}\` additions and \`-${chapter.diffFile?.deletions || 0}\` deletions. Configure a Gemini or VS Code LM provider in settings for deep interactive Q&A.`;
   }
 
   private detectStaticIssues(file: DiffFile): IssueCallout[] {

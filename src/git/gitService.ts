@@ -290,6 +290,10 @@ export class GitService {
     await this.runGit(repoPath, ['add', '--', filePath]);
   }
 
+  public async getFileContent(repoPath: string, gitRef: string): Promise<string> {
+    return await this.runGit(repoPath, ['show', gitRef]);
+  }
+
   public async unstageFile(repoPath: string, filePath: string): Promise<void> {
     try {
       await this.runGit(repoPath, ['restore', '--staged', '--', filePath]);

@@ -37,7 +37,7 @@ export class GeminiProvider implements AIProvider {
     }
 
     const config = vscode.workspace.getConfiguration('gitStory');
-    const model = config.get<string>('geminiModel') || 'gemini-2.5-flash';
+    const model = config.get<string>('geminiModel') || 'gemini-3.8-flash';
 
     // First use OrderingEngine as topological baseline
     const orderedNodes = OrderingEngine.orderFiles(files);
@@ -64,7 +64,8 @@ CRITICAL INSTRUCTIONS:
 2. Do NOT use book metaphors, "chapters", "prologues", "acts", or phrases like "In Chapter 1, we...".
 3. Instead, guide the reviewer through each changed file in a logical technical sequence. Explain why each file changed, how it connects to and builds upon preceding changes in this sequence, and what specifically needs attention.
 4. For each file/step, highlight real potential issues: bugs, race conditions, edge cases, missing null/error handling, security vulnerabilities, or performance regressions with exact line numbers where possible.
-5. Provide a suggested conventional commit message.
+5. When referring to code elements in the narrative, keyPoints, or issues (such as variable names, function names, types, class names, file paths, parameters, or short code snippets), ALWAYS format them in markdown backticks (e.g. \`SessionService\`, \`validateToken()\`, \`userId\`, \`redis.get()\`) so they stand out distinctly as code.
+6. Provide a suggested conventional commit message.
 
 Return strictly valid JSON with this schema:
 {
@@ -168,7 +169,7 @@ Return strictly valid JSON with this schema:
     if (!apiKey) return 'Gemini API key is not configured.';
 
     const config = vscode.workspace.getConfiguration('gitStory');
-    const model = config.get<string>('geminiModel') || 'gemini-2.5-flash';
+    const model = config.get<string>('geminiModel') || 'gemini-3.8-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const prompt = `You are assisting a developer reviewing file "${chapter.filePath}" (${chapter.role}).

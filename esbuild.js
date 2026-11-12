@@ -87,6 +87,7 @@ async function main() {
     }
     copyWebviewAssets();
     console.log('Build completed successfully.');
+    process.exit(0);
   }
 }
 

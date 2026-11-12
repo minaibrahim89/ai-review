@@ -37,10 +37,28 @@
         "icon": "$(book)"
       },
       {
+        "command": "gitStory.openReviewBeside",
+        "title": "Open Review Walkthrough Beside Diff Editor",
+        "category": "Git Story",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "gitStory.openNativeDiff",
+        "title": "Open Native Diff Editor",
+        "category": "Git Story",
+        "icon": "$(diff)"
+      },
+      {
         "command": "gitStory.refresh",
         "title": "Refresh Review Changes",
         "category": "Git Story",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "gitStory.clearCache",
+        "title": "Clear Review Cache & Re-analyze",
+        "category": "Git Story",
+        "icon": "$(trash)"
       },
       {
         "command": "gitStory.configureApiKey",
@@ -48,13 +66,62 @@
         "category": "Git Story"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitStoryViewContainer",
+          "title": "Git Story Review",
+          "icon": "resources/book-dark.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitStoryViewContainer": [
+        {
+          "type": "webview",
+          "id": "gitStory.reviewView",
+          "name": "Review Walkthrough"
+        }
+      ]
+    },
     "menus": {
+      "view/title": [
+        {
+          "command": "gitStory.refresh",
+          "when": "view == gitStory.reviewView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitStory.openNativeDiff",
+          "when": "view == gitStory.reviewView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitStory.openReviewBeside",
+          "when": "view == gitStory.reviewView",
+          "group": "navigation@3"
+        },
+        {
+          "command": "gitStory.clearCache",
+          "when": "view == gitStory.reviewView",
+          "group": "navigation@4"
+        }
+      ],
       "commandPalette": [
         {
           "command": "gitStory.openReview"
         },
         {
+          "command": "gitStory.openReviewBeside"
+        },
+        {
+          "command": "gitStory.openNativeDiff"
+        },
+        {
           "command": "gitStory.refresh"
+        },
+        {
+          "command": "gitStory.clearCache"
         },
         {
           "command": "gitStory.configureApiKey"
@@ -90,7 +157,7 @@
           "enumDescriptions": [
             "Automatically choose the best available provider (vscode.lm -> gemini -> heuristic)",
             "Use VS Code Language Model API (Copilot / installed models)",
-            "Use Google Gemini API directly (gemini-2.5-flash / pro)",
+            "Use Google Gemini API directly (gemini-3.8-flash / pro)",
             "Use OpenAI or OpenAI-compatible endpoint",
             "Use local Ollama instance",
             "Offline heuristic mode only (topological sort + rule-based linting)"
@@ -100,13 +167,13 @@
         },
         "gitStory.geminiModel": {
           "type": "string",
-          "default": "gemini-2.5-flash",
-          "description": "Google Gemini model name (e.g. gemini-2.5-flash, gemini-2.5-pro)."
+          "default": "gemini-3.8-flash",
+          "description": "Google Gemini model name (e.g. gemini-3.8-flash, gemini-3.8-pro)."
         },
         "gitStory.openaiModel": {
           "type": "string",
-          "default": "gpt-4o-mini",
-          "description": "OpenAI model name (e.g. gpt-4o, gpt-4o-mini)."
+          "default": "gpt-6-luna",
+          "description": "OpenAI model name (e.g. gpt-6-luna, gpt-4o)."
         },
         "gitStory.openaiBaseUrl": {
           "type": "string",
@@ -142,7 +209,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "test": "node --test dist/test/*.test.js",
+    "test": "node scripts/testRunner.js",
     "package": "vsce package --skip-license --no-dependencies"
   },
   "devDependencies": {

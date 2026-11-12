@@ -2,28 +2,60 @@ import * as vscode from 'vscode';
 import { GitService } from './git/gitService';
 import { StoryAgent } from './ai/storyAgent';
 import { ReviewPanel } from './webview/reviewPanel';
+import { ReviewViewProvider } from './webview/reviewViewProvider';
 
 export function registerCommands(
   context: vscode.ExtensionContext,
   gitService: GitService,
-  storyAgent: StoryAgent
+  storyAgent: StoryAgent,
+  reviewViewProvider: ReviewViewProvider
 ): vscode.Disposable[] {
   const disposables: vscode.Disposable[] = [];
 
-  // Command: Open Review
+  // Command: Open Review Walkthrough (Native VS Code Panel + Native Diff Editor)
   disposables.push(
     vscode.commands.registerCommand('gitStory.openReview', async () => {
+      await reviewViewProvider.showAndFocus();
+      await reviewViewProvider.openNativeDiff();
+    })
+  );
+
+  // Command: Open Review Walkthrough in Editor Tab Beside Diff
+  disposables.push(
+    vscode.commands.registerCommand('gitStory.openReviewBeside', async () => {
       await ReviewPanel.createOrShow(context.extensionUri, gitService, storyAgent);
+    })
+  );
+
+  // Command: Open Native Diff for Current Step
+  disposables.push(
+    vscode.commands.registerCommand('gitStory.openNativeDiff', async () => {
+      if (ReviewPanel.currentPanel) {
+        await ReviewPanel.currentPanel.openNativeDiff();
+      } else {
+        await reviewViewProvider.openNativeDiff();
+      }
     })
   );
 
   // Command: Refresh
   disposables.push(
     vscode.commands.registerCommand('gitStory.refresh', async () => {
+      await reviewViewProvider.refresh();
       if (ReviewPanel.currentPanel) {
         await ReviewPanel.currentPanel.refresh();
-      } else {
-        await ReviewPanel.createOrShow(context.extensionUri, gitService, storyAgent);
+      }
+    })
+  );
+
+  // Command: Clear Review Cache & Re-analyze
+  disposables.push(
+    vscode.commands.registerCommand('gitStory.clearCache', async () => {
+      storyAgent.clearCache();
+      vscode.window.showInformationMessage('Git Story: Review cache cleared. Re-analyzing changes with AI...');
+      await reviewViewProvider.refresh(true);
+      if (ReviewPanel.currentPanel) {
+        await ReviewPanel.currentPanel.refresh(true);
       }
     })
   );
@@ -34,9 +66,9 @@ export function registerCommands(
       const providerChoice = await vscode.window.showQuickPick(
         [
           { label: 'Auto (Recommended)', description: 'Tries VS Code LM, then Gemini, then Heuristic', id: 'auto' },
-          { label: 'Google Gemini', description: 'Configure Gemini API Key & Model (gemini-2.5-flash)', id: 'gemini' },
+          { label: 'Google Gemini', description: 'Configure Gemini API Key & Model (gemini-3.8-flash)', id: 'gemini' },
           { label: 'VS Code Language Model', description: 'Uses Copilot or models built into VS Code', id: 'vscode-lm' },
-          { label: 'OpenAI / Compatible', description: 'Configure OpenAI API key & endpoint', id: 'openai' },
+          { label: 'OpenAI / Compatible', description: 'Configure OpenAI API key & endpoint (gpt-6-luna)', id: 'openai' },
           { label: 'Ollama (Local LLM)', description: 'Configure local Ollama endpoint (e.g. http://localhost:11434)', id: 'ollama' },
           { label: 'Heuristic Only (Offline)', description: 'No network / API key required', id: 'heuristic-only' },
         ],
@@ -80,6 +112,7 @@ export function registerCommands(
       }
 
       vscode.window.showInformationMessage(`Git Story provider set to: ${providerChoice.label}`);
+      await reviewViewProvider.refresh();
       if (ReviewPanel.currentPanel) {
         await ReviewPanel.currentPanel.refresh();
       }

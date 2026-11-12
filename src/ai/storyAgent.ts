@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { DiffFile } from '../diff/types';
 import { AIProvider, Chapter, StoryNarrative } from './types';
 import { HeuristicProvider } from './providers/heuristicProvider';
 import { GeminiProvider } from './providers/geminiProvider';
 import { VSCodeLMProvider } from './providers/vscodeLmProvider';
 import { OpenAIProvider } from './providers/openaiProvider';
+import { computeChangesetHash, computeFileDiffHash, StoryCache } from './storyCache';
+import { OrderingEngine } from './orderingEngine';
 
 export class StoryAgent {
   private heuristicProvider: HeuristicProvider;
@@ -12,16 +15,26 @@ export class StoryAgent {
   private vscodeLmProvider: VSCodeLMProvider;
   private openaiProvider: OpenAIProvider;
   private ollamaProvider: OpenAIProvider;
+  private cache: StoryCache;
 
   private activeProvider: AIProvider;
 
   constructor(private context: vscode.ExtensionContext) {
+    this.cache = new StoryCache(context);
     this.heuristicProvider = new HeuristicProvider();
     this.geminiProvider = new GeminiProvider(context);
     this.vscodeLmProvider = new VSCodeLMProvider();
     this.openaiProvider = new OpenAIProvider(context, false);
     this.ollamaProvider = new OpenAIProvider(context, true);
     this.activeProvider = this.heuristicProvider;
+  }
+
+  public getCache(): StoryCache {
+    return this.cache;
+  }
+
+  public clearCache(): void {
+    this.cache.clear();
   }
 
   public async getProvider(): Promise<AIProvider> {
@@ -61,19 +74,136 @@ export class StoryAgent {
     return this.heuristicProvider;
   }
 
-  public async generateStory(files: DiffFile[], ctx: { repoName: string; branch?: string }): Promise<{ story: StoryNarrative; providerName: string }> {
+  private getModelName(provider: AIProvider): string {
+    const config = vscode.workspace.getConfiguration('gitStory');
+    if (provider.id === 'gemini') {
+      return config.get<string>('geminiModel') || 'gemini-3.8-flash';
+    }
+    if (provider.id === 'openai') {
+      return config.get<string>('openaiModel') || 'gpt-6-luna';
+    }
+    if (provider.id === 'ollama') {
+      return config.get<string>('ollamaModel') || 'llama3.2';
+    }
+    return provider.id;
+  }
+
+  public async generateStory(
+    files: DiffFile[],
+    ctx: { repoName: string; branch?: string },
+    forceRefresh = false
+  ): Promise<{ story: StoryNarrative; providerName: string; fromCache?: boolean }> {
+    if (files.length === 0) {
+      return {
+        story: {
+          title: 'Working Tree Clean',
+          synopsis: 'No uncommitted changes found.',
+          chapters: [],
+          suggestedCommitMessage: '',
+        },
+        providerName: 'Git Story',
+      };
+    }
+
     const provider = await this.getProvider();
     this.activeProvider = provider;
+    const modelName = this.getModelName(provider);
 
+    // Compute diff hashes for all files
+    const fileHashes: { file: DiffFile; filePath: string; fileHash: string }[] = files.map(f => {
+      const p = f.newPath || f.oldPath;
+      return {
+        file: f,
+        filePath: p,
+        fileHash: computeFileDiffHash(p, f.hunks),
+      };
+    });
+
+    const changesetHash = computeChangesetHash(fileHashes, provider.displayName, modelName);
+
+    // 1. Check Full Changeset Cache
+    if (!forceRefresh) {
+      const cachedStory = this.cache.getChangeset(changesetHash);
+      if (cachedStory) {
+        console.log(`[StoryAgent] Changeset cache hit (${changesetHash.slice(0, 8)}). Reusing AI review.`);
+        const restoredStory: StoryNarrative = {
+          title: cachedStory.title,
+          synopsis: cachedStory.synopsis,
+          suggestedCommitMessage: cachedStory.suggestedCommitMessage,
+          chapters: cachedStory.chapters.map((c, idx) => {
+            const matching = files.find(f => (f.newPath || f.oldPath) === c.filePath);
+            return {
+              index: idx + 1,
+              filePath: c.filePath,
+              title: c.title,
+              role: c.role,
+              summary: c.summary,
+              narrative: c.narrative,
+              keyPoints: c.keyPoints || [],
+              issues: c.issues || [],
+              isReviewed: false,
+              diffFile: matching,
+            };
+          }),
+        };
+        return { story: restoredStory, providerName: `${cachedStory.providerName} (Cached)`, fromCache: true };
+      }
+
+      // 2. Check File-Level Cache (e.g. when scope is switched to staged/unstaged subset)
+      const allFilesCached = fileHashes.every(fh => !!this.cache.getFileChapter(fh.fileHash));
+      if (allFilesCached && fileHashes.length > 0) {
+        console.log(`[StoryAgent] All ${fileHashes.length} files hit individual chapter cache. Reusing AI review.`);
+        const orderedNodes = OrderingEngine.orderFiles(files);
+        const chapters: Chapter[] = orderedNodes.map((n, idx) => {
+          const p = n.file.newPath || n.file.oldPath;
+          const fh = fileHashes.find(item => item.filePath === p)!;
+          const cachedCh = this.cache.getFileChapter(fh.fileHash)!;
+          return {
+            index: idx + 1,
+            filePath: p,
+            title: cachedCh.title,
+            role: cachedCh.role,
+            summary: cachedCh.summary,
+            narrative: cachedCh.narrative,
+            keyPoints: cachedCh.keyPoints || [],
+            issues: cachedCh.issues || [],
+            isReviewed: false,
+            diffFile: n.file,
+          };
+        });
+
+        const story: StoryNarrative = {
+          title: chapters.length === 1 ? `Review: ${chapters[0].title}` : `Review of ${chapters.length} Changed Files`,
+          synopsis: `Structured review sequence covering ${chapters.length} file(s) with cached AI technical analysis.`,
+          suggestedCommitMessage: `refactor: update ${chapters.map(c => path.basename(c.filePath)).join(', ')}`,
+          chapters,
+        };
+
+        // Also record this subset as a valid changeset cache
+        this.cache.setChangeset(changesetHash, story, provider.displayName, fileHashes);
+
+        return { story, providerName: `${provider.displayName} (Cached)`, fromCache: true };
+      }
+    }
+
+    // 3. Cache Miss: Query the active AI Provider
     try {
       const story = await provider.generateStory(files, ctx);
-      return { story, providerName: provider.displayName };
+
+      // Save to cache
+      this.cache.setChangeset(changesetHash, story, provider.displayName, fileHashes);
+
+      return { story, providerName: provider.displayName, fromCache: false };
     } catch (err: any) {
       console.warn(`Provider ${provider.displayName} failed: ${err.message}. Falling back to Heuristic Engine.`);
       vscode.window.showInformationMessage(`Git Story: ${provider.displayName} unavailable (${err.message}). Using Heuristic Engine.`);
       this.activeProvider = this.heuristicProvider;
       const story = await this.heuristicProvider.generateStory(files, ctx);
-      return { story, providerName: this.heuristicProvider.displayName };
+
+      // Save heuristic result to cache as well
+      this.cache.setChangeset(changesetHash, story, this.heuristicProvider.displayName, fileHashes);
+
+      return { story, providerName: this.heuristicProvider.displayName, fromCache: false };
     }
   }
 

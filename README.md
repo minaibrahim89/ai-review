@@ -50,9 +50,9 @@ Instead of an overwhelming, alphabetical doom-scroll of diffs, Git Story acts as
 
 2. **AI Provider Flexibility**:
    - **Auto Mode** (Default): Tries VS Code Language Models (`vscode.lm` with GitHub Copilot), then Google Gemini, then local Heuristic.
-   - **Google Gemini**: Direct native API integration with `gemini-2.5-flash` or `gemini-2.5-pro`. Fast, ultra-long context, generous free tier.
+   - **Google Gemini**: Direct native API integration with `gemini-3.8-flash` or `gemini-3.8-pro`. Fast, ultra-long context, generous free tier.
    - **VS Code Language Model API**: Zero configuration if you already have Copilot or other VS Code LM extensions.
-   - **OpenAI / Ollama / Local LLM**: Connect to OpenAI, LM Studio, or local Ollama (`localhost:11434`) for offline privacy.
+   - **OpenAI / Ollama / Local LLM**: Connect to OpenAI (`gpt-6-luna`), LM Studio, or local Ollama (`localhost:11434`) for offline privacy.
    - **Heuristic Offline Engine**: High-performance static code analysis, topological ordering, and pattern detection that works 100% offline without any API key or network access.
 
 3. **Distraction-Free Editorial Aesthetics**:
@@ -95,8 +95,8 @@ Packaging skips the missing license-file check and excludes runtime dependency f
 | Setting | Type | Default | Description |
 |---|---|---|---|
 | `gitStory.aiProvider` | string | `"auto"` | `"auto"`, `"vscode-lm"`, `"gemini"`, `"openai"`, `"ollama"`, or `"heuristic-only"` |
-| `gitStory.geminiModel` | string | `"gemini-2.5-flash"` | Gemini model identifier |
-| `gitStory.openaiModel` | string | `"gpt-4o-mini"` | OpenAI model identifier |
+| `gitStory.geminiModel` | string | `"gemini-3.8-flash"` | Gemini model identifier |
+| `gitStory.openaiModel` | string | `"gpt-6-luna"` | OpenAI model identifier |
 | `gitStory.openaiBaseUrl` | string | `"https://api.openai.com/v1"` | OpenAI-compatible endpoint |
 | `gitStory.ollamaEndpoint` | string | `"http://localhost:11434"` | Local Ollama base URL |
 | `gitStory.ollamaModel` | string | `"llama3.2"` | Model to prompt in Ollama |
