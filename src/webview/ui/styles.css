@@ -559,7 +559,8 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .issue-title-group {
@@ -567,6 +568,63 @@ body {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  flex: 1 1 200px;
+}
+
+.issue-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.copilot-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background-color: rgba(139, 92, 246, 0.12);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.copilot-action-btn:hover {
+  background-color: #8b5cf6;
+  color: #ffffff;
+  border-color: #7c3aed;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.copilot-action-btn.loading {
+  opacity: 0.9;
+  background-color: rgba(139, 92, 246, 0.25);
+  color: #c4b5fd;
+  cursor: default;
+}
+
+.copilot-icon {
+  flex-shrink: 0;
+}
+
+body.vscode-light .copilot-action-btn,
+body.vscode-high-contrast-light .copilot-action-btn {
+  background-color: rgba(109, 40, 217, 0.08);
+  color: #6d28d9;
+  border-color: rgba(109, 40, 217, 0.25);
+}
+
+body.vscode-light .copilot-action-btn:hover,
+body.vscode-high-contrast-light .copilot-action-btn:hover {
+  background-color: #7c3aed;
+  color: #ffffff;
+  border-color: #6d28d9;
 }
 
 .issue-badge {

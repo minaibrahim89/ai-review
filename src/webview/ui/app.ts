@@ -397,6 +397,8 @@ function renderIssues(issues: IssueCallout[]) {
     return;
   }
 
+  const current = getCurrentChapter();
+
   for (const issue of issues) {
     const card = document.createElement('div');
     card.className = `issue-card severity-${issue.severity}`;
@@ -411,7 +413,15 @@ function renderIssues(issues: IssueCallout[]) {
           <span class="issue-badge">${escapeHtml(issue.severity.toUpperCase())}</span>
           <span class="issue-title">${formatInlineMarkdown(issue.title)}</span>
         </div>
-        ${lineTag}
+        <div class="issue-actions">
+          ${lineTag}
+          <button class="copilot-action-btn" type="button" title="Address this concern with GitHub Copilot Chat">
+            <svg class="copilot-icon" width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M14.997 6.702a4.5 4.5 0 0 0-.825-2.072 4.475 4.475 0 0 0-1.89-1.464A4.542 4.542 0 0 0 9.878 2.6a4.49 4.49 0 0 0-3.756 0 4.542 4.542 0 0 0-2.404.566 4.475 4.475 0 0 0-1.89 1.464 4.5 4.5 0 0 0-.825 2.072A4.27 4.27 0 0 0 0 10.75c0 1.282.529 2.457 1.41 3.303.88.847 2.083 1.352 3.407 1.385l.083.002.327-.002a7.6 7.6 0 0 0 1.956-.379c.263-.09.52-.196.77-.318.016-.008.031-.016.047-.024.016.008.031.016.047.024.25.122.507.228.77.318.63.216 1.294.346 1.956.379l.327.002.083-.002c1.324-.033 2.527-.538 3.407-1.385.881-.846 1.41-2.021 1.41-3.303a4.27 4.27 0 0 0-1.003-4.048zM8 12.5a.75.75 0 0 1-.75-.75v-1.5a.75.75 0 0 1 1.5 0v1.5A.75.75 0 0 1 8 12.5zm-3.5-3a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm7 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+            </svg>
+            <span class="btn-text">Address with Copilot</span>
+          </button>
+        </div>
       </div>
       <p class="issue-description">${formatInlineMarkdown(issue.description)}</p>
       ${issue.suggestion ? `<div class="issue-suggestion"><strong>Fix Suggestion:</strong> ${formatInlineMarkdown(issue.suggestion)}</div>` : ''}
@@ -421,7 +431,6 @@ function renderIssues(issues: IssueCallout[]) {
     if (issue.lineNumber) {
       const tag = card.querySelector('.line-anchor-tag');
       tag?.addEventListener('click', () => {
-        const current = getCurrentChapter();
         if (current) {
           vscode.postMessage({
             type: 'jumpToDiffLine',
@@ -431,6 +440,40 @@ function renderIssues(issues: IssueCallout[]) {
         }
       });
     }
+
+    // Click handler for sending issue to GitHub Copilot Chat
+    const copilotBtn = card.querySelector('.copilot-action-btn') as HTMLButtonElement | null;
+    copilotBtn?.addEventListener('click', () => {
+      if (current) {
+        vscode.postMessage({
+          type: 'addressWithCopilot',
+          filePath: current.filePath,
+          issue: {
+            id: issue.id,
+            title: issue.title,
+            description: issue.description,
+            severity: issue.severity,
+            lineNumber: issue.lineNumber,
+            suggestion: issue.suggestion,
+          },
+        });
+
+        // Provide immediate visual feedback on button
+        const btnText = copilotBtn.querySelector('.btn-text');
+        if (btnText) {
+          const originalText = btnText.textContent;
+          btnText.textContent = 'Opening Copilot...';
+          copilotBtn.classList.add('loading');
+          setTimeout(() => {
+            btnText.textContent = 'Sent to Copilot ✓';
+            setTimeout(() => {
+              btnText.textContent = originalText;
+              copilotBtn.classList.remove('loading');
+            }, 1500);
+          }, 600);
+        }
+      }
+    });
 
     elements.issuesList.appendChild(card);
   }

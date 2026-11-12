@@ -15,7 +15,19 @@ export type WebviewMessageToExtension =
   | { type: 'askQuestion'; question: string; chapterIndex: number }
   | { type: 'commit'; message: string }
   | { type: 'openFileInEditor'; filePath: string; line?: number }
-  | { type: 'changeTheme'; themeStyle: 'zen' | 'editorial' | 'compact' };
+  | { type: 'changeTheme'; themeStyle: 'zen' | 'editorial' | 'compact' }
+  | {
+      type: 'addressWithCopilot';
+      filePath: string;
+      issue: {
+        id?: string;
+        title: string;
+        description: string;
+        severity: string;
+        lineNumber?: number;
+        suggestion?: string;
+      };
+    };
 
 export type ExtensionMessageToWebview =
   | {

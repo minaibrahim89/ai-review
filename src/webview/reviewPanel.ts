@@ -7,6 +7,7 @@ import { DiffParser } from '../diff/diffParser';
 import { DiffScope, GitRepoInfo } from '../git/types';
 import { ExtensionMessageToWebview, WebviewMessageToExtension } from './types';
 import { Chapter, StoryNarrative } from '../ai/types';
+import { buildCopilotPrompt, CopilotIssueInfo } from './copilotPrompt';
 
 export class ReviewPanel {
   public static currentPanel: ReviewPanel | undefined;
@@ -193,6 +194,56 @@ export class ReviewPanel {
         const config = vscode.workspace.getConfiguration('gitStory');
         await config.update('themeStyle', message.themeStyle, vscode.ConfigurationTarget.Global);
         break;
+      }
+      case 'addressWithCopilot': {
+        await this.handleAddressWithCopilot(message.filePath, message.issue);
+        break;
+      }
+    }
+  }
+
+  private async handleAddressWithCopilot(filePath: string, issue: CopilotIssueInfo) {
+    if (this.currentRepo) {
+      const fullPath = path.join(this.currentRepo.rootUri, filePath);
+      try {
+        if (fs.existsSync(fullPath)) {
+          const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(fullPath));
+          const line = issue.lineNumber && issue.lineNumber > 0 ? issue.lineNumber - 1 : 0;
+          await vscode.window.showTextDocument(doc, {
+            viewColumn: vscode.ViewColumn.One,
+            preserveFocus: false,
+            selection: new vscode.Range(line, 0, line, 0),
+          });
+        }
+      } catch (err: any) {
+        console.warn(`Could not open file ${filePath} for Copilot:`, err);
+      }
+    }
+
+    const query = buildCopilotPrompt(filePath, issue);
+
+    try {
+      const commands = await vscode.commands.getCommands(true);
+      if (commands.includes('workbench.action.chat.open')) {
+        await vscode.commands.executeCommand('workbench.action.chat.open', { query });
+      } else if (commands.includes('workbench.action.quickchat.open')) {
+        await vscode.commands.executeCommand('workbench.action.quickchat.open', { query });
+      } else {
+        await vscode.env.clipboard.writeText(query);
+        vscode.window.showInformationMessage(
+          'GitHub Copilot Chat is not active. The review prompt has been copied to your clipboard.',
+          'OK'
+        );
+      }
+    } catch (err: any) {
+      try {
+        await vscode.env.clipboard.writeText(query);
+        vscode.window.showInformationMessage(
+          `Could not open Copilot Chat (${err.message}). The prompt has been copied to your clipboard.`,
+          'OK'
+        );
+      } catch (clipErr) {
+        vscode.window.showErrorMessage(`Failed to address with Copilot: ${err.message}`);
       }
     }
   }
