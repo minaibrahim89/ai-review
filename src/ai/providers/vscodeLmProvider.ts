@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { DiffFile } from '../../diff/types';
-import { AIProvider, Chapter, StoryNarrative } from '../types';
+import { AIProvider, Chapter, ReviewContext, StoryNarrative, resolveSeverityLevel } from '../types';
 import { OrderingEngine } from '../orderingEngine';
 
 export class VSCodeLMProvider implements AIProvider {
@@ -31,7 +31,7 @@ export class VSCodeLMProvider implements AIProvider {
     }
   }
 
-  public async generateStory(files: DiffFile[], ctx: { repoName: string; branch?: string }): Promise<StoryNarrative> {
+  public async generateStory(files: DiffFile[], ctx: ReviewContext): Promise<StoryNarrative> {
     const model = await this.getChatModel();
     if (!model) {
       throw new Error('No VS Code language model found. Ensure GitHub Copilot or a language model provider extension is installed.');
@@ -52,6 +52,9 @@ export class VSCodeLMProvider implements AIProvider {
 ${hunksText}`;
     }).join('\n\n');
 
+    const intentionBlock = ctx.intention?.promptContext ? `\n\n${ctx.intention.promptContext}` : '';
+    const repoDefensesBlock = ctx.repoDefenses?.promptContext ? `\n\n${ctx.repoDefenses.promptContext}` : '';
+
     const prompt = `You are a principal engineer conducting a structured code review walkthrough.
 Analyze these Git changes in repository "${ctx.repoName}" (${ctx.branch || 'main'}).
 Organize the files into an optimal, logical review sequence (data contracts/schemas first, then business logic, then API endpoints, then UI, then tests/configs).
@@ -61,8 +64,9 @@ CRITICAL INSTRUCTIONS:
 2. Do NOT use book metaphors, "chapters", "prologues", "acts", or phrases like "In Chapter 1, we...".
 3. Instead, guide the reviewer through each changed file in a logical technical sequence. Explain why each file changed, how it connects to and builds upon preceding changes in this sequence, and what specifically needs attention.
 4. For each file/step, highlight real potential issues: bugs, race conditions, edge cases, missing null/error handling, security vulnerabilities, or performance regressions with exact line numbers where possible.
-5. When referring to code elements in the narrative, keyPoints, or issues (such as variable names, function names, types, class names, file paths, parameters, or short code snippets), ALWAYS format them in markdown backticks (e.g. \`SessionService\`, \`validateToken()\`, \`userId\`, \`redis.get()\`) so they stand out distinctly as code.
-6. Provide a suggested conventional commit message.
+5. CROSS-CHECK REPOSITORY DEFENSES: Before proposing any warning, bug, or suggestion, cross-check whether the concern is already handled in surrounding code, imported modules, middleware, or existing validators in the repository. If error handling, input validation, null checking, rate limiting, or authentication is already addressed, DO NOT suggest it as an issue.
+6. When referring to code elements in the narrative, keyPoints, or issues (such as variable names, function names, types, class names, file paths, parameters, or short code snippets), ALWAYS format them in markdown backticks (e.g. \`SessionService\`, \`validateToken()\`, \`userId\`, \`redis.get()\`) so they stand out distinctly as code.
+7. Provide a suggested conventional commit message.
 
 Respond strictly with valid JSON (no markdown fences, no extra text):
 {
@@ -81,6 +85,7 @@ Respond strictly with valid JSON (no markdown fences, no extra text):
         {
           "id": "iss-1",
           "severity": "warning | security | suggestion | bug | perf",
+          "severityLevel": "critical | high | medium | low | info",
           "title": "Issue title",
           "description": "Why this matters",
           "lineNumber": 12,
@@ -90,6 +95,8 @@ Respond strictly with valid JSON (no markdown fences, no extra text):
     }
   ]
 }
+${intentionBlock}
+${repoDefensesBlock}
 
 Diffs to analyze:
 ${diffSummaries}`;
@@ -121,6 +128,7 @@ ${diffSummaries}`;
         issues: (ch.issues || []).map((iss: any, j: number) => ({
           id: iss.id || `issue-${i}-${j}`,
           severity: iss.severity || 'warning',
+          severityLevel: resolveSeverityLevel(iss),
           title: iss.title || 'Potential Issue',
           description: iss.description || '',
           lineNumber: typeof iss.lineNumber === 'number' ? iss.lineNumber : undefined,
@@ -136,6 +144,10 @@ ${diffSummaries}`;
       synopsis: parsed.synopsis || '',
       suggestedCommitMessage: parsed.suggestedCommitMessage || 'feat: update changes',
       chapters,
+      intentionContext: ctx.intention && ctx.intention.sources.length > 0 ? {
+        summary: ctx.intention.summary,
+        sources: ctx.intention.sources.map(s => s.title),
+      } : undefined,
     };
   }
 

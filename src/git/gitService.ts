@@ -305,4 +305,29 @@ export class GitService {
   public async commit(repoPath: string, message: string): Promise<void> {
     await this.runGit(repoPath, ['commit', '-m', message]);
   }
+
+  public async getRecentCommitMessages(repoPath: string, count: number = 3): Promise<string[]> {
+    try {
+      const output = await this.runGit(repoPath, ['log', `-${count}`, '--pretty=format:%s']);
+      return output.split('\n').map(s => s.trim()).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  public async getCommitEditMsg(repoPath: string): Promise<string | undefined> {
+    try {
+      const msgPath = path.join(repoPath, '.git', 'COMMIT_EDITMSG');
+      if (fs.existsSync(msgPath)) {
+        const content = fs.readFileSync(msgPath, 'utf8').trim();
+        const lines = content.split('\n').filter(l => !l.trim().startsWith('#') && l.trim().length > 0);
+        if (lines.length > 0) {
+          return lines.join('\n');
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return undefined;
+  }
 }

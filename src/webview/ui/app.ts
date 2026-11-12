@@ -1,5 +1,5 @@
 import { DiffScope, GitRepoInfo } from '../../git/types';
-import { Chapter, IssueCallout, StoryNarrative } from '../../ai/types';
+import { Chapter, IssueCallout, StoryNarrative, resolveSeverityLevel } from '../../ai/types';
 import { ExtensionMessageToWebview, WebviewMessageToExtension } from '../types';
 import { escapeHtml, formatInlineMarkdown, formatMarkdown } from '../markdown';
 
@@ -64,6 +64,9 @@ const elements = {
   // Step Narrative Card
   chapterRoleBadge: document.getElementById('chapter-role-badge') as HTMLElement,
   aiProviderBadge: document.getElementById('ai-provider-badge') as HTMLElement,
+  intentionBanner: document.getElementById('intention-banner') as HTMLElement,
+  intentionSourcesTag: document.getElementById('intention-sources-tag') as HTMLElement,
+  intentionSummaryText: document.getElementById('intention-summary-text') as HTMLElement,
   chapterTitle: document.getElementById('chapter-title') as HTMLElement,
   chapterNarrative: document.getElementById('chapter-narrative') as HTMLElement,
 
@@ -356,6 +359,16 @@ function renderChapter() {
   elements.chapterTitle.textContent = current.title;
   elements.chapterNarrative.innerHTML = formatMarkdown(current.narrative);
 
+  // Intention Banner
+  if (state.story?.intentionContext) {
+    const { summary, sources } = state.story.intentionContext;
+    elements.intentionBanner.style.display = 'block';
+    elements.intentionSourcesTag.textContent = sources.length > 0 ? sources.join(' • ') : '';
+    elements.intentionSummaryText.textContent = summary;
+  } else {
+    elements.intentionBanner.style.display = 'none';
+  }
+
   // Key Highlights
   elements.keyPointsList.innerHTML = '';
   (current.keyPoints || []).forEach((pt) => {
@@ -400,8 +413,10 @@ function renderIssues(issues: IssueCallout[]) {
   const current = getCurrentChapter();
 
   for (const issue of issues) {
+    const level = resolveSeverityLevel(issue);
+    const levelUpper = level.toUpperCase();
     const card = document.createElement('div');
-    card.className = `issue-card severity-${issue.severity}`;
+    card.className = `issue-card severity-${issue.severity} level-${level}`;
 
     const lineTag = issue.lineNumber
       ? `<button class="line-anchor-tag" data-line="${issue.lineNumber}" title="Jump to Line ${issue.lineNumber} in Native Diff">L${issue.lineNumber} &rarr;</button>`
@@ -410,7 +425,12 @@ function renderIssues(issues: IssueCallout[]) {
     card.innerHTML = `
       <div class="issue-header">
         <div class="issue-title-group">
-          <span class="issue-badge">${escapeHtml(issue.severity.toUpperCase())}</span>
+          <span class="issue-badge badge-${issue.severity}">${escapeHtml(issue.severity.toUpperCase())}</span>
+          <span class="severity-level-badge level-${level}">
+            <span class="severity-dot"></span>
+            <span class="severity-level-text">${escapeHtml(levelUpper)} SEVERITY</span>
+          </span>
+          ${issue.crossCheckVerified ? `<span class="crosscheck-badge" title="Verified against repository: Concern is not addressed elsewhere">Repo Verified</span>` : ''}
           <span class="issue-title">${formatInlineMarkdown(issue.title)}</span>
         </div>
         <div class="issue-actions">
@@ -453,6 +473,7 @@ function renderIssues(issues: IssueCallout[]) {
             title: issue.title,
             description: issue.description,
             severity: issue.severity,
+            severityLevel: level,
             lineNumber: issue.lineNumber,
             suggestion: issue.suggestion,
           },
@@ -596,6 +617,15 @@ function appendAiAnswer(question: string, answer: string) {
 }
 
 function openSynopsisModal() {
+  let synopsisHtml = formatMarkdown(state.story?.synopsis || 'No overview available.');
+  if (state.story?.intentionContext) {
+    const { summary, sources } = state.story.intentionContext;
+    synopsisHtml = `<div class="intention-overview-callout">` +
+      `<strong>Intent Grounding:</strong> ${escapeHtml(summary)}` +
+      (sources.length > 0 ? `<div class="intention-sources-subtext">Sources: ${escapeHtml(sources.join(', '))}</div>` : '') +
+      `</div>` + synopsisHtml;
+  }
+  elements.synopsisText.innerHTML = synopsisHtml;
   elements.synopsisModal.classList.add('open');
 }
 

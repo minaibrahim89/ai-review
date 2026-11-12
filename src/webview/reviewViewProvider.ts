@@ -329,7 +329,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
   private async loadStory(forceRefresh = false) {
     if (!this.currentRepo) return;
 
-    this.postMessage({ type: 'loading', payload: { message: 'Analyzing diffs and organizing review sequence...' } });
+    this.postMessage({ type: 'loading', payload: { message: 'Cross-checking repository defenses & commit intentions...' } });
 
     try {
       const rawDiff = await this.gitService.getDiff(this.currentRepo.rootUri, undefined, this.currentScope);
@@ -359,6 +359,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
       // Generate Story using AI Story Agent (cached)
       const { story, providerName } = await this.storyAgent.generateStory(diffFiles, {
         repoName: this.currentRepo.name,
+        repoRoot: this.currentRepo.rootUri,
         branch: this.currentRepo.headBranch,
       }, forceRefresh);
 

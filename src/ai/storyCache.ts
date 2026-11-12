@@ -22,6 +22,10 @@ export interface CachedStoryNarrative {
   synopsis: string;
   suggestedCommitMessage: string;
   chapters: CachedChapterContent[];
+  intentionContext?: {
+    summary: string;
+    sources: string[];
+  };
   timestamp: number;
 }
 
@@ -49,10 +53,11 @@ export function computeFileDiffHash(filePath: string, hunks: DiffHunk[]): string
 export function computeChangesetHash(
   files: { filePath: string; fileHash: string }[],
   providerName: string,
-  modelName: string
+  modelName: string,
+  intentionSummary: string = ''
 ): string {
   const sorted = [...files].sort((a, b) => a.filePath.localeCompare(b.filePath));
-  const signature = `${providerName}:${modelName}:${sorted.map(s => `${s.filePath}=${s.fileHash}`).join(';')}`;
+  const signature = `${providerName}:${modelName}:${intentionSummary}:${sorted.map(s => `${s.filePath}=${s.fileHash}`).join(';')}`;
   return crypto.createHash('sha256').update(signature).digest('hex');
 }
 
@@ -156,6 +161,7 @@ export class StoryCache {
       synopsis: story.synopsis,
       suggestedCommitMessage: story.suggestedCommitMessage,
       chapters: cachedChapters,
+      intentionContext: story.intentionContext,
       timestamp: now,
     };
 

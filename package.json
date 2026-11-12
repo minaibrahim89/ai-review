@@ -29,6 +29,21 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "chatParticipants": [
+      {
+        "id": "gitStory.participant",
+        "name": "gitstory",
+        "fullName": "Git Story Review",
+        "description": "Reviews uncommitted Git changes in logical sequence with deep intention and Copilot context awareness",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "review",
+            "description": "Review uncommitted Git changes in logical sequence"
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "gitStory.openReview",

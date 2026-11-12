@@ -501,6 +501,101 @@ body {
   color: var(--text-primary);
 }
 
+/* ----------------- Intention Grounding Banner ----------------- */
+.intention-banner {
+  background-color: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-left: 3px solid #6366f1;
+  border-radius: 5px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.intention-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+
+.intention-icon {
+  color: #818cf8;
+  flex-shrink: 0;
+}
+
+.intention-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #a5b4fc;
+  letter-spacing: 0.5px;
+}
+
+.intention-sources-tag {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background-color: rgba(99, 102, 241, 0.15);
+  color: #c7d2fe;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.intention-summary-text {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
+.intention-overview-callout {
+  background-color: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 5px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.intention-sources-subtext {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Light Theme Adjustments */
+body.vscode-light .intention-banner,
+body.vscode-high-contrast-light .intention-banner {
+  background-color: #f5f3ff;
+  border-color: #ddd6fe;
+  border-left-color: #7c3aed;
+}
+
+body.vscode-light .intention-icon,
+body.vscode-high-contrast-light .intention-icon {
+  color: #6d28d9;
+}
+
+body.vscode-light .intention-label,
+body.vscode-high-contrast-light .intention-label {
+  color: #5b21b6;
+}
+
+body.vscode-light .intention-sources-tag,
+body.vscode-high-contrast-light .intention-sources-tag {
+  background-color: #ede9fe;
+  color: #5b21b6;
+  border-color: #c4b5fd;
+}
+
+body.vscode-light .intention-overview-callout,
+body.vscode-high-contrast-light .intention-overview-callout {
+  background-color: #f5f3ff;
+  border-color: #ddd6fe;
+}
+
 /* ----------------- Key Highlights List ----------------- */
 .key-points-list {
   list-style: none;
@@ -553,6 +648,13 @@ body {
 .issue-card.severity-bug { border-left-color: #dc2626; }
 .issue-card.severity-suggestion { border-left-color: #3b82f6; }
 .issue-card.severity-perf { border-left-color: #8b5cf6; }
+
+/* Level-based border accents */
+.issue-card.level-critical { border-left-color: #ef4444; }
+.issue-card.level-high { border-left-color: #f97316; }
+.issue-card.level-medium { border-left-color: #f59e0b; }
+.issue-card.level-low { border-left-color: #3b82f6; }
+.issue-card.level-info { border-left-color: #06b6d4; }
 
 .issue-header {
   display: flex;
@@ -630,12 +732,238 @@ body.vscode-high-contrast-light .copilot-action-btn:hover {
 .issue-badge {
   font-size: 10px;
   font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 3px;
+  padding: 2px 7px;
+  border-radius: 4px;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
   background-color: rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
+  display: inline-flex;
+  align-items: center;
+}
+
+.issue-badge.badge-warning {
+  background-color: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.38);
+}
+
+.issue-badge.badge-security {
+  background-color: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.issue-badge.badge-bug {
+  background-color: rgba(220, 38, 38, 0.18);
+  color: #fca5a5;
+  border-color: rgba(220, 38, 38, 0.45);
+}
+
+.issue-badge.badge-suggestion {
+  background-color: rgba(59, 130, 246, 0.16);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.38);
+}
+
+.issue-badge.badge-perf {
+  background-color: rgba(139, 92, 246, 0.16);
+  color: #c084fc;
+  border-color: rgba(139, 92, 246, 0.38);
+}
+
+/* Light Theme Category Badges */
+body.vscode-light .issue-badge.badge-warning,
+body.vscode-high-contrast-light .issue-badge.badge-warning {
+  background-color: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+body.vscode-light .issue-badge.badge-security,
+body.vscode-high-contrast-light .issue-badge.badge-security {
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+body.vscode-light .issue-badge.badge-bug,
+body.vscode-high-contrast-light .issue-badge.badge-bug {
+  background-color: #fff1f2;
+  color: #be123c;
+  border-color: #fecdd3;
+}
+
+body.vscode-light .issue-badge.badge-suggestion,
+body.vscode-high-contrast-light .issue-badge.badge-suggestion {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+body.vscode-light .issue-badge.badge-perf,
+body.vscode-high-contrast-light .issue-badge.badge-perf {
+  background-color: #f5f3ff;
+  color: #6d28d9;
+  border-color: #ddd6fe;
+}
+
+/* ----------------- Severity Level Badges ----------------- */
+.severity-level-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.severity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Critical */
+.severity-level-badge.level-critical {
+  background-color: rgba(220, 38, 38, 0.2);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+.severity-level-badge.level-critical .severity-dot {
+  background-color: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.75);
+}
+
+/* High */
+.severity-level-badge.level-high {
+  background-color: rgba(234, 88, 12, 0.2);
+  color: #fdba74;
+  border-color: rgba(249, 115, 22, 0.5);
+}
+.severity-level-badge.level-high .severity-dot {
+  background-color: #f97316;
+  box-shadow: 0 0 6px rgba(249, 115, 22, 0.75);
+}
+
+/* Medium */
+.severity-level-badge.level-medium {
+  background-color: rgba(217, 119, 6, 0.18);
+  color: #fde047;
+  border-color: rgba(245, 158, 11, 0.45);
+}
+.severity-level-badge.level-medium .severity-dot {
+  background-color: #eab308;
+  box-shadow: 0 0 5px rgba(234, 179, 8, 0.65);
+}
+
+/* Low */
+.severity-level-badge.level-low {
+  background-color: rgba(37, 99, 235, 0.18);
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.45);
+}
+.severity-level-badge.level-low .severity-dot {
+  background-color: #3b82f6;
+  box-shadow: 0 0 5px rgba(59, 130, 246, 0.65);
+}
+
+/* Info */
+.severity-level-badge.level-info {
+  background-color: rgba(14, 165, 233, 0.18);
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.45);
+}
+.severity-level-badge.level-info .severity-dot {
+  background-color: #0ea5e9;
+  box-shadow: 0 0 5px rgba(14, 165, 233, 0.65);
+}
+
+/* Light Theme Adjustments for Severity Level Badges */
+body.vscode-light .severity-level-badge.level-critical,
+body.vscode-high-contrast-light .severity-level-badge.level-critical {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+body.vscode-light .severity-level-badge.level-critical .severity-dot,
+body.vscode-high-contrast-light .severity-level-badge.level-critical .severity-dot {
+  background-color: #dc2626;
+  box-shadow: 0 0 4px rgba(220, 38, 38, 0.45);
+}
+
+body.vscode-light .severity-level-badge.level-high,
+body.vscode-high-contrast-light .severity-level-badge.level-high {
+  background-color: #ffedd5;
+  color: #9a3412;
+  border-color: #fed7aa;
+}
+body.vscode-light .severity-level-badge.level-high .severity-dot,
+body.vscode-high-contrast-light .severity-level-badge.level-high .severity-dot {
+  background-color: #ea580c;
+  box-shadow: 0 0 4px rgba(234, 88, 12, 0.45);
+}
+
+body.vscode-light .severity-level-badge.level-medium,
+body.vscode-high-contrast-light .severity-level-badge.level-medium {
+  background-color: #fef9c3;
+  color: #854d0e;
+  border-color: #fde047;
+}
+body.vscode-light .severity-level-badge.level-medium .severity-dot,
+body.vscode-high-contrast-light .severity-level-badge.level-medium .severity-dot {
+  background-color: #ca8a04;
+  box-shadow: 0 0 4px rgba(202, 138, 4, 0.45);
+}
+
+body.vscode-light .severity-level-badge.level-low,
+body.vscode-high-contrast-light .severity-level-badge.level-low {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+body.vscode-light .severity-level-badge.level-low .severity-dot,
+body.vscode-high-contrast-light .severity-level-badge.level-low .severity-dot {
+  background-color: #2563eb;
+  box-shadow: 0 0 4px rgba(37, 99, 235, 0.45);
+}
+
+body.vscode-light .severity-level-badge.level-info,
+body.vscode-high-contrast-light .severity-level-badge.level-info {
+  background-color: #e0f2fe;
+  color: #075985;
+  border-color: #bae6fd;
+}
+body.vscode-light .severity-level-badge.level-info .severity-dot,
+body.vscode-high-contrast-light .severity-level-badge.level-info .severity-dot {
+  background-color: #0284c7;
+  box-shadow: 0 0 4px rgba(2, 132, 199, 0.45);
+}
+
+.crosscheck-badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background-color: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  white-space: nowrap;
+}
+
+body.vscode-light .crosscheck-badge,
+body.vscode-high-contrast-light .crosscheck-badge {
+  background-color: #ecfdf5;
+  color: #059669;
+  border-color: #a7f3d0;
 }
 
 .issue-title {

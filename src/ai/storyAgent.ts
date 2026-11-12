@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DiffFile } from '../diff/types';
-import { AIProvider, Chapter, StoryNarrative } from './types';
+import { AIProvider, Chapter, ReviewContext, StoryNarrative, resolveSeverityLevel } from './types';
 import { HeuristicProvider } from './providers/heuristicProvider';
 import { GeminiProvider } from './providers/geminiProvider';
 import { VSCodeLMProvider } from './providers/vscodeLmProvider';
 import { OpenAIProvider } from './providers/openaiProvider';
 import { computeChangesetHash, computeFileDiffHash, StoryCache } from './storyCache';
 import { OrderingEngine } from './orderingEngine';
+import { IntentionDetector } from './intentionContext';
+import { RepoCrossChecker } from './repoCrossCheck';
 
 export class StoryAgent {
   private heuristicProvider: HeuristicProvider;
@@ -90,7 +92,7 @@ export class StoryAgent {
 
   public async generateStory(
     files: DiffFile[],
-    ctx: { repoName: string; branch?: string },
+    ctx: ReviewContext,
     forceRefresh = false
   ): Promise<{ story: StoryNarrative; providerName: string; fromCache?: boolean }> {
     if (files.length === 0) {
@@ -103,6 +105,24 @@ export class StoryAgent {
         },
         providerName: 'Git Story',
       };
+    }
+
+    // Discover intention context from docs, Copilot Chat, open editors, and Git
+    if (!ctx.intention && ctx.repoRoot) {
+      try {
+        ctx.intention = await IntentionDetector.detectIntention(ctx.repoRoot, files, undefined, this.context);
+      } catch (err) {
+        console.warn('[StoryAgent] Error detecting intention:', err);
+      }
+    }
+
+    // Gather repository defenses and surrounding code context for cross-checking
+    if (!ctx.repoDefenses && ctx.repoRoot) {
+      try {
+        ctx.repoDefenses = RepoCrossChecker.gatherRepoDefenses(ctx.repoRoot, files);
+      } catch (err) {
+        console.warn('[StoryAgent] Error gathering repo defenses:', err);
+      }
     }
 
     const provider = await this.getProvider();
@@ -119,7 +139,12 @@ export class StoryAgent {
       };
     });
 
-    const changesetHash = computeChangesetHash(fileHashes, provider.displayName, modelName);
+    const changesetHash = computeChangesetHash(
+      fileHashes,
+      provider.displayName,
+      modelName,
+      ctx.intention?.summary || ''
+    );
 
     // 1. Check Full Changeset Cache
     if (!forceRefresh) {
@@ -130,6 +155,10 @@ export class StoryAgent {
           title: cachedStory.title,
           synopsis: cachedStory.synopsis,
           suggestedCommitMessage: cachedStory.suggestedCommitMessage,
+          intentionContext: cachedStory.intentionContext || (ctx.intention && ctx.intention.sources.length > 0 ? {
+            summary: ctx.intention.summary,
+            sources: ctx.intention.sources.map(s => s.title),
+          } : undefined),
           chapters: cachedStory.chapters.map((c, idx) => {
             const matching = files.find(f => (f.newPath || f.oldPath) === c.filePath);
             return {
@@ -140,7 +169,10 @@ export class StoryAgent {
               summary: c.summary,
               narrative: c.narrative,
               keyPoints: c.keyPoints || [],
-              issues: c.issues || [],
+              issues: (c.issues || []).map(iss => ({
+                ...iss,
+                severityLevel: resolveSeverityLevel(iss),
+              })),
               isReviewed: false,
               diffFile: matching,
             };
@@ -166,7 +198,10 @@ export class StoryAgent {
             summary: cachedCh.summary,
             narrative: cachedCh.narrative,
             keyPoints: cachedCh.keyPoints || [],
-            issues: cachedCh.issues || [],
+            issues: (cachedCh.issues || []).map(iss => ({
+              ...iss,
+              severityLevel: resolveSeverityLevel(iss),
+            })),
             isReviewed: false,
             diffFile: n.file,
           };
@@ -177,6 +212,10 @@ export class StoryAgent {
           synopsis: `Structured review sequence covering ${chapters.length} file(s) with cached AI technical analysis.`,
           suggestedCommitMessage: `refactor: update ${chapters.map(c => path.basename(c.filePath)).join(', ')}`,
           chapters,
+          intentionContext: ctx.intention && ctx.intention.sources.length > 0 ? {
+            summary: ctx.intention.summary,
+            sources: ctx.intention.sources.map(s => s.title),
+          } : undefined,
         };
 
         // Also record this subset as a valid changeset cache
@@ -189,6 +228,23 @@ export class StoryAgent {
     // 3. Cache Miss: Query the active AI Provider
     try {
       const story = await provider.generateStory(files, ctx);
+      if (!story.intentionContext && ctx.intention && ctx.intention.sources.length > 0) {
+        story.intentionContext = {
+          summary: ctx.intention.summary,
+          sources: ctx.intention.sources.map(s => s.title),
+        };
+      }
+
+      // Cross-check and prune any issues already addressed in the repository
+      RepoCrossChecker.verifyStoryIssues(story, files, ctx.repoRoot);
+
+      // Ensure all issues have severityLevel normalized
+      for (const ch of story.chapters) {
+        ch.issues = (ch.issues || []).map(iss => ({
+          ...iss,
+          severityLevel: resolveSeverityLevel(iss),
+        }));
+      }
 
       // Save to cache
       this.cache.setChangeset(changesetHash, story, provider.displayName, fileHashes);
@@ -199,6 +255,23 @@ export class StoryAgent {
       vscode.window.showInformationMessage(`Git Story: ${provider.displayName} unavailable (${err.message}). Using Heuristic Engine.`);
       this.activeProvider = this.heuristicProvider;
       const story = await this.heuristicProvider.generateStory(files, ctx);
+      if (!story.intentionContext && ctx.intention && ctx.intention.sources.length > 0) {
+        story.intentionContext = {
+          summary: ctx.intention.summary,
+          sources: ctx.intention.sources.map(s => s.title),
+        };
+      }
+
+      // Cross-check and prune any issues already addressed in the repository
+      RepoCrossChecker.verifyStoryIssues(story, files, ctx.repoRoot);
+
+      // Ensure all issues have severityLevel normalized
+      for (const ch of story.chapters) {
+        ch.issues = (ch.issues || []).map(iss => ({
+          ...iss,
+          severityLevel: resolveSeverityLevel(iss),
+        }));
+      }
 
       // Save heuristic result to cache as well
       this.cache.setChangeset(changesetHash, story, this.heuristicProvider.displayName, fileHashes);

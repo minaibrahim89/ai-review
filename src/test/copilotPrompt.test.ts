@@ -8,15 +8,28 @@ test('buildCopilotPrompt formats prompt with file, line, and suggestion', () => 
     title: 'Missing Token Expiration Validation',
     description: 'The jwt.verify callback does not check for expired tokens before accepting claims.',
     severity: 'security',
+    severityLevel: 'critical',
     lineNumber: 42,
     suggestion: 'Add maxAge or ignoreExpiration: false in jwt.verifyOptions.',
   });
 
-  assert.ok(prompt.includes('SECURITY concern in src/auth/jwt.ts around line 42'));
+  assert.ok(prompt.includes('CRITICAL SEVERITY SECURITY concern in src/auth/jwt.ts around line 42'));
   assert.ok(prompt.includes('Issue: Missing Token Expiration Validation'));
   assert.ok(prompt.includes('The jwt.verify callback does not check for expired tokens'));
   assert.ok(prompt.includes('Suggested Fix:\nAdd maxAge or ignoreExpiration: false'));
   assert.ok(prompt.includes('Please explain how to resolve this concern and provide the corrected code.'));
+});
+
+test('buildCopilotPrompt formats prompt with high severity warning', () => {
+  const prompt = buildCopilotPrompt('src/api/order.ts', {
+    title: 'Potential Unhandled Null',
+    description: 'Order item could be null.',
+    severity: 'warning',
+    severityLevel: 'high',
+    lineNumber: 88,
+  });
+
+  assert.ok(prompt.includes('HIGH SEVERITY WARNING concern in src/api/order.ts around line 88:'));
 });
 
 test('buildCopilotPrompt handles issue without line number or suggestion', () => {

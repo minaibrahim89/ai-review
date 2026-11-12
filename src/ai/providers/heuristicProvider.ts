@@ -1,7 +1,8 @@
 import * as path from 'path';
 import { DiffFile } from '../../diff/types';
-import { AIProvider, Chapter, IssueCallout, StoryNarrative } from '../types';
+import { AIProvider, Chapter, IssueCallout, ReviewContext, StoryNarrative, resolveSeverityLevel } from '../types';
 import { OrderingEngine } from '../orderingEngine';
+import { RepoCrossChecker } from '../repoCrossCheck';
 
 export class HeuristicProvider implements AIProvider {
   public readonly id = 'heuristic-only';
@@ -11,15 +12,19 @@ export class HeuristicProvider implements AIProvider {
     return true; // Always available offline
   }
 
-  public async generateStory(files: DiffFile[], context: { repoName: string; branch?: string }): Promise<StoryNarrative> {
+  public async generateStory(files: DiffFile[], context: ReviewContext): Promise<StoryNarrative> {
     const orderedNodes = OrderingEngine.orderFiles(files);
     const totalAdditions = files.reduce((acc, f) => acc + f.additions, 0);
     const totalDeletions = files.reduce((acc, f) => acc + f.deletions, 0);
 
     // Build overall synopsis
     const fileCount = files.length;
-    const synopsis = `This changeset in **${context.repoName}** (${context.branch || 'current branch'}) modifies ${fileCount} file${fileCount > 1 ? 's' : ''} with **+${totalAdditions} additions** and **-${totalDeletions} deletions**.\n\n` +
+    let synopsis = `This changeset in **${context.repoName}** (${context.branch || 'current branch'}) modifies ${fileCount} file${fileCount > 1 ? 's' : ''} with **+${totalAdditions} additions** and **-${totalDeletions} deletions**.\n\n` +
       `The changes are organized in a logical review sequence: starting with foundational schemas and contracts, progressing through core business logic and API endpoints, and concluding with UI views and verification tests.`;
+
+    if (context.intention?.summary) {
+      synopsis = `**Intention (${context.intention.sources.map(s => s.title).join(', ')}):**\n${context.intention.summary}\n\n` + synopsis;
+    }
 
     const chapters: Chapter[] = [];
 
@@ -29,8 +34,8 @@ export class HeuristicProvider implements AIProvider {
       const filePath = file.newPath || file.oldPath;
       const basename = path.basename(filePath);
 
-      // Analyze issues using static code smell rules
-      const issues = this.detectStaticIssues(file);
+      // Analyze issues using static code smell rules, cross-checking against repo
+      const issues = this.detectStaticIssues(file, context.repoRoot);
 
       // Construct technical explanation for this review step
       let narrative = `\`${basename}\` serves as the **${node.role}** for this changeset. `;
@@ -71,6 +76,10 @@ export class HeuristicProvider implements AIProvider {
       synopsis,
       chapters,
       suggestedCommitMessage,
+      intentionContext: context.intention && context.intention.sources.length > 0 ? {
+        summary: context.intention.summary,
+        sources: context.intention.sources.map(s => s.title),
+      } : undefined,
     };
   }
 
@@ -81,7 +90,10 @@ export class HeuristicProvider implements AIProvider {
         return `Heuristic check: No automated code smells or security flags were detected in \`${chapter.filePath}\`. The diff appears clean.`;
       }
       return `Potential items to review in \`${chapter.filePath}\`:\n` +
-        chapter.issues.map(i => `- [${i.severity.toUpperCase()}] Line \`${i.lineNumber || '?'}\`: **${i.title}** - ${i.description}`).join('\n');
+        chapter.issues.map(i => {
+          const lvl = (i.severityLevel || resolveSeverityLevel(i)).toUpperCase();
+          return `- [${i.severity.toUpperCase()} • ${lvl} SEVERITY] Line \`${i.lineNumber || '?'}\`: **${i.title}** - ${i.description}`;
+        }).join('\n');
     }
 
     if (qLower.includes('why') || qLower.includes('summary')) {
@@ -92,8 +104,8 @@ export class HeuristicProvider implements AIProvider {
     return `Heuristic analysis: \`${chapter.filePath}\` (${chapter.role}) has \`+${chapter.diffFile?.additions || 0}\` additions and \`-${chapter.diffFile?.deletions || 0}\` deletions. Configure a Gemini or VS Code LM provider in settings for deep interactive Q&A.`;
   }
 
-  private detectStaticIssues(file: DiffFile): IssueCallout[] {
-    const issues: IssueCallout[] = [];
+  private detectStaticIssues(file: DiffFile, repoRoot?: string): IssueCallout[] {
+    const rawIssues: IssueCallout[] = [];
     let issueCount = 0;
 
     for (const hunk of file.hunks) {
@@ -104,9 +116,10 @@ export class HeuristicProvider implements AIProvider {
 
         // 1. Leftover debugging statements
         if (/(console\.(log|debug|trace)|debugger;)/.test(text)) {
-          issues.push({
+          rawIssues.push({
             id: `issue-${++issueCount}`,
             severity: 'warning',
+            severityLevel: 'medium',
             title: 'Debugging Statement in Commit',
             description: 'A console or debugger call was added. Ensure this is intentional before committing.',
             lineNumber: lineNum,
@@ -116,9 +129,10 @@ export class HeuristicProvider implements AIProvider {
 
         // 2. Unsafe JSON.parse without fallback or validation
         if (/JSON\.parse\s*\(/.test(text) && !/try\s*\{/.test(text)) {
-          issues.push({
+          rawIssues.push({
             id: `issue-${++issueCount}`,
             severity: 'suggestion',
+            severityLevel: 'low',
             title: 'Potential Unhandled JSON Parse Error',
             description: 'JSON.parse can throw a SyntaxError on malformed or null payloads.',
             lineNumber: lineNum,
@@ -128,9 +142,10 @@ export class HeuristicProvider implements AIProvider {
 
         // 3. Exposed secret / token patterns
         if (/(api_key|secret_key|private_key|auth_token)\s*[:=]\s*['"][a-zA-Z0-9_\-]{8,}['"]/i.test(text)) {
-          issues.push({
+          rawIssues.push({
             id: `issue-${++issueCount}`,
             severity: 'security',
+            severityLevel: 'critical',
             title: 'Potential Hardcoded Secret',
             description: 'A literal secret or token credential was detected in the diff.',
             lineNumber: lineNum,
@@ -140,9 +155,10 @@ export class HeuristicProvider implements AIProvider {
 
         // 4. Loose TypeScript any types
         if (/:\s*any\b/.test(text)) {
-          issues.push({
+          rawIssues.push({
             id: `issue-${++issueCount}`,
             severity: 'suggestion',
+            severityLevel: 'low',
             title: 'Explicit "any" Type Usage',
             description: 'Using `any` disables TypeScript type checking for this expression.',
             lineNumber: lineNum,
@@ -152,9 +168,10 @@ export class HeuristicProvider implements AIProvider {
 
         // 5. Unresolved TODO or FIXME
         if (/\b(TODO|FIXME|HACK)\b/i.test(text)) {
-          issues.push({
+          rawIssues.push({
             id: `issue-${++issueCount}`,
             severity: 'suggestion',
+            severityLevel: 'info',
             title: 'Unresolved TODO / FIXME Note',
             description: `Review note found: "${text.trim()}". Verify if it must be addressed in this commit.`,
             lineNumber: lineNum,
@@ -163,7 +180,8 @@ export class HeuristicProvider implements AIProvider {
       }
     }
 
-    return issues;
+    // Cross-check issues against file and repository to filter out already-handled concerns
+    return RepoCrossChecker.verifyAndFilterIssues(rawIssues, file, repoRoot);
   }
 
   private summarizeKeyPoints(file: DiffFile): string[] {

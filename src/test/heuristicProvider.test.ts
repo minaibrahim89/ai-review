@@ -48,20 +48,24 @@ test('HeuristicProvider should detect debugging statements and unsafe JSON parsi
   const debugIssue = chapter.issues.find(i => i.title.includes('Debugging Statement'));
   assert.ok(debugIssue);
   assert.strictEqual(debugIssue.lineNumber, 10);
+  assert.strictEqual(debugIssue.severityLevel, 'medium');
 
   const jsonIssue = chapter.issues.find(i => i.title.includes('JSON Parse'));
   assert.ok(jsonIssue);
   assert.strictEqual(jsonIssue.lineNumber, 25);
+  assert.strictEqual(jsonIssue.severityLevel, 'low');
 
   const secretIssue = chapter.issues.find(i => i.title.includes('Secret'));
   assert.ok(secretIssue);
   assert.strictEqual(secretIssue.lineNumber, 40);
+  assert.strictEqual(secretIssue.severityLevel, 'critical');
 });
 
 test('HeuristicProvider should answer reviewer questions', async () => {
   const provider = new HeuristicProvider();
   const file = createMockDiffWithLines('src/models/user.ts', [
-    { lineNum: 1, content: 'export interface User { id: string; }' }
+    { lineNum: 1, content: 'export interface User { id: string; }' },
+    { lineNum: 2, content: 'console.log("user loaded");' }
   ]);
 
   const result = await provider.generateStory([file], { repoName: 'test-repo' });
@@ -69,4 +73,5 @@ test('HeuristicProvider should answer reviewer questions', async () => {
 
   const answer = await provider.askQuestion('What are potential issues in this file?', chapter, '');
   assert.ok(answer.length > 0);
+  assert.ok(answer.includes('MEDIUM SEVERITY'));
 });

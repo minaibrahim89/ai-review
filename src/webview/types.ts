@@ -24,6 +24,7 @@ export type WebviewMessageToExtension =
         title: string;
         description: string;
         severity: string;
+        severityLevel?: string;
         lineNumber?: number;
         suggestion?: string;
       };
