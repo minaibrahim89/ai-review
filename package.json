@@ -1,0 +1,156 @@
+{
+  "name": "git-story",
+  "displayName": "Git Story: AI Diff Reader",
+  "description": "An aesthetically pleasing, minimal, narrative-driven AI code review for Git changes before commit.",
+  "version": "0.1.0",
+  "publisher": "git-story",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/git-story/git-story.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "code review",
+    "ai",
+    "diff",
+    "story",
+    "commit"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitStory.openReview",
+        "title": "Review Changes with AI Story",
+        "category": "Git Story",
+        "icon": "$(book)"
+      },
+      {
+        "command": "gitStory.refresh",
+        "title": "Refresh Story Changes",
+        "category": "Git Story",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitStory.configureApiKey",
+        "title": "Configure AI Provider & API Key",
+        "category": "Git Story"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "gitStory.openReview"
+        },
+        {
+          "command": "gitStory.refresh"
+        },
+        {
+          "command": "gitStory.configureApiKey"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "gitStory.openReview",
+          "group": "navigation",
+          "when": "scmRepositoryCount > 0"
+        }
+      ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "gitStory.openReview",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Git Story",
+      "properties": {
+        "gitStory.aiProvider": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "vscode-lm",
+            "gemini",
+            "openai",
+            "ollama",
+            "heuristic-only"
+          ],
+          "enumDescriptions": [
+            "Automatically choose the best available provider (vscode.lm -> gemini -> heuristic)",
+            "Use VS Code Language Model API (Copilot / installed models)",
+            "Use Google Gemini API directly (gemini-2.5-flash / pro)",
+            "Use OpenAI or OpenAI-compatible endpoint",
+            "Use local Ollama instance",
+            "Offline heuristic mode only (topological sort + rule-based linting)"
+          ],
+          "default": "auto",
+          "description": "AI provider used to sequence and narrate code review stories."
+        },
+        "gitStory.geminiModel": {
+          "type": "string",
+          "default": "gemini-2.5-flash",
+          "description": "Google Gemini model name (e.g. gemini-2.5-flash, gemini-2.5-pro)."
+        },
+        "gitStory.openaiModel": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "OpenAI model name (e.g. gpt-4o, gpt-4o-mini)."
+        },
+        "gitStory.openaiBaseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "OpenAI-compatible API base URL."
+        },
+        "gitStory.ollamaEndpoint": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Local Ollama server base URL."
+        },
+        "gitStory.ollamaModel": {
+          "type": "string",
+          "default": "llama3.2",
+          "description": "Ollama model name to query."
+        },
+        "gitStory.diffViewMode": {
+          "type": "string",
+          "enum": ["split", "unified"],
+          "default": "split",
+          "description": "Default diff presentation mode on the left page."
+        },
+        "gitStory.themeStyle": {
+          "type": "string",
+          "enum": ["zen", "editorial", "compact"],
+          "default": "zen",
+          "description": "Reading aesthetic style for the review storybook."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "test": "node --test dist/test/*.test.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/diff": "^5.2.3",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "diff": "^5.2.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.2"
+  }
+}

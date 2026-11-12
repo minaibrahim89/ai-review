@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Git Story</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-zen">
+  <div id="app">
+    <!-- Top Navigation Bar -->
+    <header class="story-header">
+      <div class="header-left">
+        <button id="toc-btn" class="icon-btn" title="Table of Contents (T)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <div class="story-meta">
+          <span class="story-brand">Git Story</span>
+          <span class="story-divider">/</span>
+          <span id="repo-branch" class="repo-badge">main</span>
+          <span id="story-title" class="story-title-text">Loading Review Story...</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="chapter-progress-container">
+          <span id="chapter-counter" class="chapter-counter">Chapter 1 of 1</span>
+          <div class="progress-bar-track">
+            <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- Diff Mode Selector -->
+        <div class="segmented-control" id="diff-mode-control">
+          <button data-mode="split" class="segment-btn active" title="Side-by-side diff">Split</button>
+          <button data-mode="unified" class="segment-btn" title="Unified diff">Unified</button>
+        </div>
+
+        <!-- Scope Selector -->
+        <select id="scope-select" class="dropdown-select" title="Diff Scope">
+          <option value="all">All Changes</option>
+          <option value="staged">Staged Only</option>
+          <option value="unstaged">Unstaged Only</option>
+        </select>
+
+        <!-- Refresh Button -->
+        <button id="refresh-btn" class="icon-btn" title="Refresh Changes (R)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Two-Page Story Reader -->
+    <main class="story-reader">
+      <!-- Left Page: The Diff Viewer -->
+      <section class="book-page left-page" id="left-page">
+        <div class="page-header">
+          <div class="file-info">
+            <span id="file-status-badge" class="badge badge-modified">M</span>
+            <span id="file-path" class="file-path-title">path/to/file.ts</span>
+          </div>
+          <div class="file-actions">
+            <span id="file-diff-stats" class="diff-stats">+0 -0</span>
+            <button id="stage-file-btn" class="action-btn-subtle" title="Toggle Stage / Unstage">Stage</button>
+            <button id="open-editor-btn" class="action-btn-subtle" title="Open in VS Code Editor">Open File</button>
+          </div>
+        </div>
+
+        <div class="diff-scroll-viewport" id="diff-viewport">
+          <div id="diff-content" class="diff-content split-view">
+            <!-- Diff lines rendered here -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Page Divider -->
+      <div class="page-spine" id="page-spine">
+        <div class="spine-line"></div>
+      </div>
+
+      <!-- Right Page: The AI Story & Insights -->
+      <section class="book-page right-page" id="right-page">
+        <div class="page-header">
+          <div class="chapter-badge-wrapper">
+            <span id="chapter-role-badge" class="role-badge">Core Engine</span>
+            <span id="ai-provider-badge" class="provider-badge">AI Story</span>
+          </div>
+          <button id="synopsis-toggle-btn" class="action-btn-subtle">Prologue</button>
+        </div>
+
+        <div class="story-scroll-viewport" id="story-viewport">
+          <div class="story-prose">
+            <h2 id="chapter-title" class="chapter-headline">The New Data Contract</h2>
+            
+            <div class="story-narrative-box">
+              <p id="chapter-narrative" class="chapter-narrative-text">
+                Analyzing changes...
+              </p>
+            </div>
+
+            <!-- Key Points Section -->
+            <div class="key-points-section">
+              <h4 class="section-label">Key Highlights</h4>
+              <ul id="key-points-list" class="key-points-list">
+                <!-- Bullets rendered here -->
+              </ul>
+            </div>
+
+            <!-- Potential Issues / Watch-Outs Section -->
+            <div class="issues-section">
+              <h4 class="section-label">Potential Issues & Watch-Outs</h4>
+              <div id="issues-list" class="issues-list">
+                <!-- Issue cards rendered here -->
+              </div>
+            </div>
+
+            <!-- Interactive AI Question Box -->
+            <div class="ask-ai-section">
+              <h4 class="section-label">Ask AI About This Chapter</h4>
+              <div class="ask-ai-input-wrapper">
+                <input type="text" id="ask-ai-input" placeholder="e.g. Is this backward-compatible? Can this leak memory?" />
+                <button id="ask-ai-submit-btn" class="ask-btn">Ask</button>
+              </div>
+              <div id="ask-ai-conversation" class="ask-ai-conversation">
+                <!-- Questions & answers append here -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <footer class="story-footer">
+      <div class="footer-left">
+        <button id="prev-chapter-btn" class="nav-btn" title="Previous Chapter ([ or J)">
+          &larr; Previous Chapter
+        </button>
+      </div>
+
+      <div class="footer-center">
+        <label class="reviewed-checkbox-label">
+          <input type="checkbox" id="reviewed-check" />
+          <span class="custom-checkbox"></span>
+          <span class="reviewed-label-text">Mark as Reviewed</span>
+        </label>
+      </div>
+
+      <div class="footer-right">
+        <button id="next-chapter-btn" class="nav-btn primary" title="Next Chapter (] or K)">
+          Next Chapter &rarr;
+        </button>
+        <button id="finish-commit-btn" class="nav-btn commit-cta" style="display: none;" title="Finish Review and Commit">
+          Finish &amp; Commit
+        </button>
+      </div>
+    </footer>
+
+    <!-- Slide-Out Table of Contents Drawer -->
+    <aside id="toc-drawer" class="toc-drawer">
+      <div class="toc-header">
+        <h3>Story Chapters</h3>
+        <button id="close-toc-btn" class="icon-btn">&times;</button>
+      </div>
+      <div class="toc-list" id="toc-list">
+        <!-- Chapter items rendered here -->
+      </div>
+    </aside>
+    <div id="drawer-backdrop" class="drawer-backdrop"></div>
+
+    <!-- Prologue / Synopsis Modal -->
+    <div id="synopsis-modal" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="synopsis-modal-title">Changeset Synopsis</h3>
+          <button id="close-synopsis-btn" class="icon-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p id="synopsis-text" class="synopsis-prose"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Commit Dialog Modal -->
+    <div id="commit-modal" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Commit Reviewed Changes</h3>
+          <button id="close-commit-btn" class="icon-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <label for="commit-message-input" class="commit-input-label">AI Suggested Commit Message:</label>
+          <textarea id="commit-message-input" rows="6" class="commit-textarea"></textarea>
+          <div class="modal-actions">
+            <button id="cancel-commit-btn" class="action-btn-subtle">Cancel</button>
+            <button id="execute-commit-btn" class="nav-btn primary">Commit Changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+      <div class="loading-spinner"></div>
+      <p id="loading-message" class="loading-message">Reading Git changes...</p>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
