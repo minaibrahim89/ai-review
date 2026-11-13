@@ -1121,21 +1121,6 @@ body.vscode-high-contrast-light .crosscheck-badge {
   font-weight: 700;
 }
 
-.reviewed-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-muted);
-  user-select: none;
-}
-
-.reviewed-checkbox-label input {
-  cursor: pointer;
-}
-
 /* ----------------- Slide-Out TOC Drawer ----------------- */
 .toc-drawer {
   position: fixed;

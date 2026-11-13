@@ -82,7 +82,7 @@ const elements = {
   // Footer
   prevChapterBtn: document.getElementById('prev-chapter-btn') as HTMLButtonElement,
   nextChapterBtn: document.getElementById('next-chapter-btn') as HTMLButtonElement,
-  reviewedCheck: document.getElementById('reviewed-check') as HTMLInputElement,
+  markReviewedBtn: document.getElementById('mark-reviewed-btn') as HTMLButtonElement,
   finishCommitBtn: document.getElementById('finish-commit-btn') as HTMLButtonElement,
 
   // Commit Modal
@@ -133,22 +133,21 @@ function init() {
   // Step Navigation
   elements.prevChapterBtn.addEventListener('click', goToPrevChapter);
   elements.nextChapterBtn.addEventListener('click', goToNextChapter);
-  elements.finishCommitBtn.addEventListener('click', openCommitModal);
-
-  // Reviewed Checkbox
-  elements.reviewedCheck.addEventListener('change', () => {
+  elements.markReviewedBtn.addEventListener('click', () => {
     const chapter = getCurrentChapter();
     if (chapter) {
-      chapter.isReviewed = elements.reviewedCheck.checked;
+      chapter.isReviewed = true;
       renderToc();
       updateProgressBar();
       vscode.postMessage({
         type: 'markReviewed',
         chapterIndex: state.currentChapterIndex,
-        isReviewed: chapter.isReviewed,
+        isReviewed: true,
       });
+      goToNextChapter();
     }
   });
+  elements.finishCommitBtn.addEventListener('click', openCommitModal);
 
   // Stage button
   elements.stageFileBtn.addEventListener('click', () => {
@@ -199,7 +198,12 @@ function init() {
 
   // Keyboard navigation shortcuts
   window.addEventListener('keydown', (e) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
+    if (
+      e.target instanceof HTMLInputElement ||
+      e.target instanceof HTMLTextAreaElement ||
+      e.target instanceof HTMLSelectElement ||
+      e.target instanceof HTMLButtonElement
+    ) {
       return;
     }
 
@@ -213,7 +217,7 @@ function init() {
       vscode.postMessage({ type: 'refresh' });
     } else if (e.key === ' ') {
       e.preventDefault();
-      elements.reviewedCheck.click();
+      elements.markReviewedBtn.click();
     }
   });
 
@@ -380,9 +384,6 @@ function renderChapter() {
 
   // Issues
   renderIssues(current.issues || []);
-
-  // Reviewed status
-  elements.reviewedCheck.checked = !!current.isReviewed;
 
   // Clear Ask AI conversation for new file
   elements.askAiConversation.innerHTML = '';
