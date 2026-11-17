@@ -4,6 +4,7 @@ import { StoryNarrative } from '../ai/types';
 export type WebviewMessageToExtension =
   | { type: 'ready' }
   | { type: 'refresh' }
+  | { type: 'cancelReview' }
   | { type: 'changeScope'; scope: DiffScope }
   | { type: 'changeRepo'; repoUri: string }
   | { type: 'requestCommits' }
@@ -75,6 +76,7 @@ export type ExtensionMessageToWebview =
   | { type: 'setChapter'; payload: { chapterIndex: number } }
   | { type: 'answer'; payload: { question: string; answer: string; chapterIndex: number } }
   | { type: 'loading'; payload: { message: string } }
+  | { type: 'reviewCancelled'; payload: { message: string } }
   | { type: 'fileStagedStatus'; payload: { filePath: string; isStaged: boolean } }
   | { type: 'commitSuccess'; payload: { message: string } }
   | { type: 'error'; payload: { message: string } }

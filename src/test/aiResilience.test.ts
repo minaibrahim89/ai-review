@@ -239,3 +239,31 @@ test('StoryAgent in auto mode tries secondary available AI provider before falli
   assert.equal(res.story.chapters[0].narrative, 'Reviewed by OpenAI fallback');
   assert.equal(notices.length, 0);
 });
+
+test('StoryAgent aborts without heuristic fallback or error notice when signal is cancelled', async () => {
+  const { agent, notices } = createAgentWithPref('openai');
+  const controller = new AbortController();
+
+  const provider: AIProvider = {
+    id: 'openai',
+    displayName: 'Test AI',
+    isAvailable: async () => true,
+    generateStory: async (_files, ctx) => {
+      controller.abort();
+      if (ctx.signal?.aborted) {
+        const err = new Error('Aborted');
+        err.name = 'AbortError';
+        throw err;
+      }
+      throw new Error('Should have aborted');
+    },
+    askQuestion: async () => '',
+  };
+  agent.getProvider = async () => provider;
+
+  await assert.rejects(
+    () => agent.generateStory([makeDiffFile('src/cancel.ts')], { repoName: 'repo', signal: controller.signal }),
+    (err: any) => err?.name === 'ReviewCancelledError'
+  );
+  assert.equal(notices.length, 0);
+});

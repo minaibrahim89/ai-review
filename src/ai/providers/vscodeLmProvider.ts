@@ -2,7 +2,13 @@ import * as vscode from 'vscode';
 import { DiffFile } from '../../diff/types';
 import { AIProvider, Chapter, ReviewContext, StoryNarrative } from '../types';
 import { OrderingEngine } from '../orderingEngine';
-import { formatDiffsForPrompt, parseProviderStoryResponse } from './responseParser';
+import {
+  formatDiffsForPrompt,
+  isCancellationError,
+  parseProviderStoryResponse,
+  ReviewCancelledError,
+  throwIfCancelled,
+} from './responseParser';
 
 export class VSCodeLMProvider implements AIProvider {
   public readonly id = 'vscode-lm';
@@ -111,17 +117,25 @@ ${diffSummaries}`;
     let lastError: Error | undefined;
 
     for (const model of models.slice(0, 3)) {
+      throwIfCancelled(ctx.signal);
       const tokenSource = new vscode.CancellationTokenSource();
+      const onAbort = () => tokenSource.cancel();
+      ctx.signal?.addEventListener('abort', onAbort, { once: true });
       try {
         const response = await model.sendRequest(messages, {}, tokenSource.token);
         let fullText = '';
         for await (const chunk of response.text) {
+          throwIfCancelled(ctx.signal);
           fullText += chunk;
         }
         return parseProviderStoryResponse(fullText, files, ctx, 'Review Walkthrough');
       } catch (err: any) {
+        if (isCancellationError(err, ctx.signal)) {
+          throw new ReviewCancelledError();
+        }
         lastError = err instanceof Error ? err : new Error(String(err));
       } finally {
+        ctx.signal?.removeEventListener('abort', onAbort);
         tokenSource.dispose();
       }
     }

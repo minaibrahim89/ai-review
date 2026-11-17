@@ -5,6 +5,7 @@ import { DiffParser } from '../diff/diffParser';
 import { CommitComparison, CommitRef, DiffScope, GitRepoInfo } from '../git/types';
 import { ExtensionMessageToWebview, WebviewMessageToExtension } from './types';
 import { Chapter, StoryNarrative } from '../ai/types';
+import { isCancellationError } from '../ai/providers/responseParser';
 import {
   addressIssueWithCopilot,
   buildCommitsListPayload,
@@ -28,8 +29,11 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
   private currentScope: DiffScope = 'all';
   private currentComparison?: CommitComparison;
   private currentStory?: StoryNarrative;
+  private lastCompletedStory?: StoryNarrative;
   private currentChapterIndex: number = 0;
   private currentProviderName: string = 'Heuristic';
+  private activeReviewAbort?: AbortController;
+  private activeReviewRunId: number = 0;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -82,6 +86,10 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
       }
       case 'refresh': {
         await this.refresh();
+        break;
+      }
+      case 'cancelReview': {
+        this.cancelActiveReview();
         break;
       }
       case 'changeScope': {
@@ -378,6 +386,11 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    this.activeReviewAbort?.abort();
+    const controller = new AbortController();
+    this.activeReviewAbort = controller;
+    const runId = ++this.activeReviewRunId;
+
     this.postMessage({
       type: 'loading',
       payload: {
@@ -392,6 +405,8 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
       const rawDiff = comparison
         ? await this.gitService.getCommitDiff(currentRepo.rootUri, comparison.base.hash, comparison.target.hash)
         : await this.gitService.getDiff(currentRepo.rootUri, undefined, this.currentScope);
+      if (runId !== this.activeReviewRunId || controller.signal.aborted) return;
+
       const diffFiles = DiffParser.parse(rawDiff);
 
       if (diffFiles.length === 0) {
@@ -408,6 +423,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
               chapters: [],
               suggestedCommitMessage: '',
             };
+        this.lastCompletedStory = this.currentStory;
         this.postMessage({
           type: 'init',
           payload: {
@@ -425,6 +441,8 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
       let initialized = false;
       const publishStory = (story: StoryNarrative, providerName: string) => {
+        if (runId !== this.activeReviewRunId || controller.signal.aborted) return;
+
         const reviewedPaths = new Set(
           (this.currentStory?.chapters || []).filter(chapter => chapter.isReviewed).map(chapter => chapter.filePath)
         );
@@ -436,6 +454,9 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
 
         this.currentStory = story;
         this.currentProviderName = providerName;
+        if (!story.chapters.some(chapter => chapter.isPending)) {
+          this.lastCompletedStory = story;
+        }
         if (!initialized) {
           initialized = true;
           this.currentChapterIndex = 0;
@@ -462,6 +483,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
       const extras = comparison
         ? await loadComparisonExtras(this.gitService, currentRepo.rootUri, diffFiles, comparison)
         : undefined;
+      if (runId !== this.activeReviewRunId || controller.signal.aborted) return;
 
       const { story, providerName } = await this.storyAgent.generateStory(diffFiles, {
         repoName: currentRepo.name,
@@ -470,7 +492,10 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
         comparison,
         comparisonCommits: extras?.comparisonCommits,
         targetFileContents: extras?.targetFileContents,
+        signal: controller.signal,
       }, forceRefresh, progressStory => publishStory(progressStory, 'AI Review (analyzing)'));
+      if (runId !== this.activeReviewRunId || controller.signal.aborted) return;
+
       publishStory(story, providerName);
 
       // Automatically open the first file in VS Code's native diff editor!
@@ -478,11 +503,31 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
         await this.openNativeDiff(story.chapters[0]);
       }
     } catch (err: any) {
+      if (isCancellationError(err, controller.signal) || runId !== this.activeReviewRunId) {
+        return;
+      }
       this.postMessage({
         type: 'error',
         payload: { message: `Failed to load review: ${err.message}` }
       });
+    } finally {
+      if (this.activeReviewAbort === controller) {
+        this.activeReviewAbort = undefined;
+      }
     }
+  }
+
+  public cancelActiveReview() {
+    this.activeReviewRunId++;
+    this.activeReviewAbort?.abort();
+    this.activeReviewAbort = undefined;
+    if (this.currentStory?.chapters.some(ch => ch.isPending)) {
+      this.currentStory = this.lastCompletedStory;
+    }
+    this.postMessage({
+      type: 'reviewCancelled',
+      payload: { message: 'AI review generation cancelled.' },
+    });
   }
 
   private async handleAskQuestion(question: string, chapterIndex: number) {
@@ -539,6 +584,7 @@ export class ReviewViewProvider implements vscode.WebviewViewProvider {
   }
 
   public dispose() {
+    this.activeReviewAbort?.abort();
     ReviewViewProvider.currentInstance = undefined;
     while (this.disposables.length) {
       const d = this.disposables.pop();

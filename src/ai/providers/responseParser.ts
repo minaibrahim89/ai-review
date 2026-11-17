@@ -3,6 +3,60 @@ import { DiffFile } from '../../diff/types';
 import { OrderedFileNode } from '../orderingEngine';
 import { Chapter, ReviewContext, StoryNarrative, resolveSeverityLevel } from '../types';
 
+export class ReviewCancelledError extends Error {
+  constructor(message: string = 'AI review generation was cancelled.') {
+    super(message);
+    this.name = 'ReviewCancelledError';
+  }
+}
+
+export function isCancellationError(err: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true;
+  if (!err || typeof err !== 'object') return false;
+  const name = (err as { name?: string }).name;
+  return name === 'ReviewCancelledError' || name === 'AbortError';
+}
+
+export function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new ReviewCancelledError();
+  }
+}
+
+export function createCombinedAbortSignal(
+  externalSignal?: AbortSignal,
+  timeoutMs: number = 60000
+): { signal?: AbortSignal; cleanup: () => void } {
+  if (typeof AbortController === 'undefined') {
+    return { signal: externalSignal, cleanup: () => {} };
+  }
+
+  const controller = new AbortController();
+  const onExternalAbort = () => controller.abort();
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+      return { signal: controller.signal, cleanup: () => {} };
+    }
+    externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+
+  const timer = typeof setTimeout === 'function'
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : undefined;
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      if (timer !== undefined && typeof clearTimeout === 'function') {
+        clearTimeout(timer);
+      }
+      externalSignal?.removeEventListener('abort', onExternalAbort);
+    },
+  };
+}
+
 export function normalizeReviewPath(filePath: string): string {
   return filePath
     .trim()

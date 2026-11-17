@@ -2,7 +2,14 @@ import * as vscode from 'vscode';
 import { DiffFile } from '../../diff/types';
 import { AIProvider, Chapter, ReviewContext, StoryNarrative } from '../types';
 import { OrderingEngine } from '../orderingEngine';
-import { formatDiffsForPrompt, parseProviderStoryResponse } from './responseParser';
+import {
+  createCombinedAbortSignal,
+  formatDiffsForPrompt,
+  isCancellationError,
+  parseProviderStoryResponse,
+  ReviewCancelledError,
+  throwIfCancelled,
+} from './responseParser';
 
 export class OpenAIProvider implements AIProvider {
   public readonly id: string;
@@ -114,6 +121,8 @@ ${diffSummaries}`;
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt < 2; attempt++) {
+      throwIfCancelled(ctx.signal);
+      const { signal, cleanup } = createCombinedAbortSignal(ctx.signal, 60000);
       try {
         const body: Record<string, unknown> = {
           model,
@@ -124,9 +133,6 @@ ${diffSummaries}`;
           body.response_format = { type: 'json_object' };
         }
 
-        const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-          ? AbortSignal.timeout(60000)
-          : undefined;
         const res = await fetch(`${baseUrl}/chat/completions`, {
           method: 'POST',
           headers: {
@@ -145,10 +151,11 @@ ${diffSummaries}`;
             continue;
           }
           lastError = new Error(`OpenAI API error (${res.status}): ${err}`);
-          if ((res.status === 429 || res.status >= 500) && attempt === 0) {
+          if ((res.status === 429 || res.status >= 500) && attempt === 0 && !ctx.signal?.aborted) {
             if (typeof setTimeout === 'function') {
               await new Promise(resolve => setTimeout(resolve, 800));
             }
+            throwIfCancelled(ctx.signal);
             continue;
           }
           throw lastError;
@@ -160,11 +167,16 @@ ${diffSummaries}`;
 
         return parseProviderStoryResponse(content, files, ctx, 'Review Walkthrough');
       } catch (err: any) {
+        if (isCancellationError(err, ctx.signal)) {
+          throw new ReviewCancelledError();
+        }
         lastError = err instanceof Error ? err : new Error(String(err));
         if (attempt === 0 && (err instanceof SyntaxError || /empty response|valid JSON/i.test(lastError.message))) {
           continue;
         }
         throw lastError;
+      } finally {
+        cleanup();
       }
     }
 

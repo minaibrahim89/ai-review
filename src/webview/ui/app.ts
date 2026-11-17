@@ -14,6 +14,8 @@ const vscode = acquireVsCodeApi();
 
 interface AppState {
   story?: StoryNarrative;
+  lastCompletedStory?: StoryNarrative;
+  lastCompletedProviderName?: string;
   currentChapterIndex: number;
   currentRepo?: GitRepoInfo;
   repos: GitRepoInfo[];
@@ -131,6 +133,7 @@ const elements = {
   // Loading
   loadingOverlay: document.getElementById('loading-overlay') as HTMLElement,
   loadingMessage: document.getElementById('loading-message') as HTMLElement,
+  cancelReviewBtn: document.getElementById('cancel-review-btn') as HTMLButtonElement,
 };
 
 function init() {
@@ -140,6 +143,8 @@ function init() {
     showLoading('Refreshing review changes...');
     vscode.postMessage({ type: 'refresh' });
   });
+
+  elements.cancelReviewBtn.addEventListener('click', requestCancelReview);
 
   elements.openDiffBtn.addEventListener('click', () => {
     const chapter = getCurrentChapter();
@@ -334,7 +339,7 @@ function init() {
   elements.executeCommitBtn.addEventListener('click', () => {
     const msg = elements.commitMessageInput.value.trim();
     if (msg) {
-      showLoading('Executing git commit...');
+      showLoading('Executing git commit...', false);
       vscode.postMessage({ type: 'commit', message: msg });
       closeCommitModal();
     }
@@ -350,6 +355,11 @@ function init() {
 
   // Keyboard navigation shortcuts
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && elements.loadingOverlay.classList.contains('open') && !elements.cancelReviewBtn.hidden) {
+      requestCancelReview();
+      return;
+    }
+
     if (
       e.target instanceof HTMLInputElement ||
       e.target instanceof HTMLTextAreaElement ||
@@ -399,6 +409,10 @@ function handleExtensionMessage(event: MessageEvent<ExtensionMessageToWebview>) 
 
       elements.scopeSelect.value = state.scope;
       closeCompareModal();
+      if (!state.story?.chapters.some(ch => ch.isPending)) {
+        state.lastCompletedStory = state.story;
+        state.lastCompletedProviderName = state.providerName;
+      }
       renderStory();
       break;
     }
@@ -416,6 +430,10 @@ function handleExtensionMessage(event: MessageEvent<ExtensionMessageToWebview>) 
         state.comparison = message.payload.comparison;
       }
       closeCompareModal();
+      if (!state.story?.chapters.some(ch => ch.isPending)) {
+        state.lastCompletedStory = state.story;
+        state.lastCompletedProviderName = state.providerName;
+      }
       renderStory();
       break;
     }
@@ -455,6 +473,20 @@ function handleExtensionMessage(event: MessageEvent<ExtensionMessageToWebview>) 
 
     case 'loading': {
       showLoading(message.payload.message);
+      break;
+    }
+
+    case 'reviewCancelled': {
+      hideLoading();
+      if (!state.story || state.story.chapters.some(ch => ch.isPending)) {
+        if (state.lastCompletedStory) {
+          state.story = state.lastCompletedStory;
+          state.providerName = state.lastCompletedProviderName || state.providerName;
+          renderStory();
+        } else {
+          renderCancelledState(message.payload.message);
+        }
+      }
       break;
     }
 
@@ -1064,13 +1096,41 @@ function populateCompareSelectors(applyDefaults: boolean) {
   syncSelectToInput(elements.targetCommitSelect, elements.targetCommitInput.value);
 }
 
-function showLoading(msg: string) {
+function showLoading(msg: string, cancellable: boolean = true) {
   elements.loadingMessage.textContent = msg;
+  elements.cancelReviewBtn.disabled = false;
+  elements.cancelReviewBtn.textContent = 'Cancel';
+  elements.cancelReviewBtn.hidden = !cancellable;
   elements.loadingOverlay.classList.add('open');
 }
 
 function hideLoading() {
   elements.loadingOverlay.classList.remove('open');
+  elements.cancelReviewBtn.disabled = false;
+  elements.cancelReviewBtn.textContent = 'Cancel';
+}
+
+function requestCancelReview() {
+  if (elements.cancelReviewBtn.disabled) return;
+  elements.cancelReviewBtn.disabled = true;
+  elements.cancelReviewBtn.textContent = 'Cancelling...';
+  elements.loadingMessage.textContent = 'Cancelling AI review...';
+  vscode.postMessage({ type: 'cancelReview' });
+}
+
+function renderCancelledState(message: string) {
+  elements.storyTitle.textContent = 'Review Cancelled';
+  elements.chapterCounter.textContent = '0 of 0';
+  elements.filePath.textContent = 'Generation Cancelled';
+  elements.chapterTitle.textContent = 'AI review generation cancelled';
+  elements.chapterNarrative.innerHTML = `<p class="prose-p">${escapeHtml(message || 'AI review generation was cancelled.')}</p>`;
+  elements.keyPointsList.innerHTML = '<li class="key-point-item">Click Refresh in the toolbar whenever you want to run the AI review again.</li>';
+  elements.issuesList.innerHTML = '';
+  elements.stageFileBtn.style.display = state.scope === 'commits' ? 'none' : '';
+  elements.prevChapterBtn.disabled = true;
+  elements.nextChapterBtn.disabled = true;
+  elements.finishCommitBtn.style.display = 'none';
+  elements.openDiffBtn.disabled = true;
 }
 
 // Initialize on script load

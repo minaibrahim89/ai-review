@@ -125,6 +125,7 @@ export interface ReviewContext {
   targetFileContents?: Map<string, string>;
   intention?: IntentionAnalysis;
   repoDefenses?: RepoDefenseAnalysis;
+  signal?: AbortSignal;
 }
 
 export interface StoryNarrative {

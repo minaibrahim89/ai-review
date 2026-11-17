@@ -2,7 +2,14 @@ import * as vscode from 'vscode';
 import { DiffFile } from '../../diff/types';
 import { AIProvider, Chapter, ReviewContext, StoryNarrative } from '../types';
 import { OrderingEngine } from '../orderingEngine';
-import { formatDiffsForPrompt, parseProviderStoryResponse } from './responseParser';
+import {
+  createCombinedAbortSignal,
+  formatDiffsForPrompt,
+  isCancellationError,
+  parseProviderStoryResponse,
+  ReviewCancelledError,
+  throwIfCancelled,
+} from './responseParser';
 
 export class GeminiProvider implements AIProvider {
   public readonly id = 'gemini';
@@ -112,10 +119,9 @@ Return strictly valid JSON with this schema:
 
     let lastError: Error | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
+      throwIfCancelled(ctx.signal);
+      const { signal, cleanup } = createCombinedAbortSignal(ctx.signal, 60000);
       try {
-        const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-          ? AbortSignal.timeout(60000)
-          : undefined;
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -127,10 +133,11 @@ Return strictly valid JSON with this schema:
           const errText = await response.text();
           const retryable = response.status === 429 || response.status >= 500;
           lastError = new Error(`Gemini API error (${response.status}): ${errText}`);
-          if (retryable && attempt === 0) {
+          if (retryable && attempt === 0 && !ctx.signal?.aborted) {
             if (typeof setTimeout === 'function') {
               await new Promise(resolve => setTimeout(resolve, 800));
             }
+            throwIfCancelled(ctx.signal);
             continue;
           }
           throw lastError;
@@ -144,11 +151,16 @@ Return strictly valid JSON with this schema:
 
         return parseProviderStoryResponse(textOutput, files, ctx, 'Review Story');
       } catch (err: any) {
+        if (isCancellationError(err, ctx.signal)) {
+          throw new ReviewCancelledError();
+        }
         lastError = err instanceof Error ? err : new Error(String(err));
         if (attempt === 0 && (err instanceof SyntaxError || /empty response|valid JSON/i.test(lastError.message))) {
           continue;
         }
         throw lastError;
+      } finally {
+        cleanup();
       }
     }
 

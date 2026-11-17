@@ -10,6 +10,7 @@ import { computeChangesetHash, computeFileDiffHash, computeFileReviewCacheHash, 
 import { OrderedFileNode, OrderingEngine } from './orderingEngine';
 import { IntentionDetector } from './intentionContext';
 import { RepoCrossChecker } from './repoCrossCheck';
+import { isCancellationError, ReviewCancelledError, throwIfCancelled } from './providers/responseParser';
 
 export class StoryAgent {
   private heuristicProvider: HeuristicProvider;
@@ -122,6 +123,7 @@ export class StoryAgent {
     const collectedChapters: Chapter[] = [];
 
     if (orderedFiles.length <= BATCH_SIZE || targetProvider.id === 'heuristic-only') {
+      throwIfCancelled(ctx.signal);
       const single = await targetProvider.generateStory(orderedFiles, ctx);
       mergedTitle = single.title;
       mergedSynopsis = single.synopsis;
@@ -130,8 +132,10 @@ export class StoryAgent {
       collectedChapters.push(...(single.chapters || []));
     } else {
       for (let start = 0; start < orderedFiles.length; start += BATCH_SIZE) {
+        throwIfCancelled(ctx.signal);
         const batch = orderedFiles.slice(start, start + BATCH_SIZE);
         const batchStory = await targetProvider.generateStory(batch, ctx);
+        throwIfCancelled(ctx.signal);
         if (!mergedTitle && batchStory.title) mergedTitle = batchStory.title;
         if (!mergedSynopsis && batchStory.synopsis) mergedSynopsis = batchStory.synopsis;
         if (!mergedCommitMessage && batchStory.suggestedCommitMessage) mergedCommitMessage = batchStory.suggestedCommitMessage;
@@ -141,6 +145,7 @@ export class StoryAgent {
       }
     }
 
+    throwIfCancelled(ctx.signal);
     if (collectedChapters.length === 0) {
       throw new Error('AI provider did not return any file reviews.');
     }
@@ -155,13 +160,17 @@ export class StoryAgent {
     let omittedFiles = orderedFiles.filter(f => !chapterByPath.has(f.newPath || f.oldPath));
     if (omittedFiles.length > 0 && omittedFiles.length <= 4) {
       try {
+        throwIfCancelled(ctx.signal);
         const retryStory = await targetProvider.generateStory(omittedFiles, ctx);
         for (const ch of retryStory.chapters || []) {
           if (ch.filePath && !chapterByPath.has(ch.filePath)) {
             chapterByPath.set(ch.filePath, ch);
           }
         }
-      } catch {
+      } catch (retryErr) {
+        if (isCancellationError(retryErr, ctx.signal)) {
+          throw new ReviewCancelledError();
+        }
         // Keep partial AI review chapters rather than discarding the entire review
       }
       omittedFiles = orderedFiles.filter(f => !chapterByPath.has(f.newPath || f.oldPath));
@@ -236,6 +245,8 @@ export class StoryAgent {
       suggestedCommitMessage: '',
       chapters: orderedNodes.map((node, idx) => createPendingChapter(idx + 1, node)),
     });
+
+    throwIfCancelled(ctx.signal);
 
     // Discover intention context from docs, Copilot Chat, open editors, and Git
     if (!ctx.intention && ctx.repoRoot) {
@@ -415,6 +426,7 @@ export class StoryAgent {
     let lastError: Error | undefined;
 
     for (const candidate of candidates) {
+      throwIfCancelled(ctx.signal);
       try {
         this.activeProvider = candidate;
         const { story: generatedStory, hadHeuristicFill } = await this.runProviderReview(
@@ -422,6 +434,7 @@ export class StoryAgent {
           filesToAnalyze,
           ctx,
           partialChapters => {
+            if (ctx.signal?.aborted) return;
             onProgress?.(buildStory({
               title: 'Review in Progress',
               synopsis: 'AI analysis is in progress.',
@@ -430,6 +443,8 @@ export class StoryAgent {
             }));
           }
         );
+
+        throwIfCancelled(ctx.signal);
 
         // Cross-check and prune any issues already addressed in the repository
         RepoCrossChecker.verifyStoryIssues(generatedStory, filesToAnalyze, ctx.repoRoot, ctx.targetFileContents);
@@ -457,10 +472,15 @@ export class StoryAgent {
 
         return { story, providerName: candidate.displayName, fromCache: false };
       } catch (err: any) {
+        if (isCancellationError(err, ctx.signal)) {
+          throw new ReviewCancelledError();
+        }
         lastError = err instanceof Error ? err : new Error(String(err));
         console.warn(`Provider ${candidate.displayName} failed: ${lastError.message}.`);
       }
     }
+
+    throwIfCancelled(ctx.signal);
 
     const failMsg = lastError ? lastError.message : 'AI provider unavailable';
     console.warn(`All AI providers failed (${failMsg}). Falling back to Heuristic Engine.`);
