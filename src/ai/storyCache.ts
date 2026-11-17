@@ -61,6 +61,16 @@ export function computeChangesetHash(
   return crypto.createHash('sha256').update(signature).digest('hex');
 }
 
+export function computeFileReviewCacheHash(
+  filePath: string,
+  fileHash: string,
+  providerName: string,
+  modelName: string,
+  intentionSummary: string = ''
+): string {
+  return computeChangesetHash([{ filePath, fileHash }], providerName, modelName, intentionSummary);
+}
+
 export class StoryCache {
   private static readonly CHANGESET_KEY = 'gitStory.cache.changesets';
   private static readonly CHAPTER_KEY = 'gitStory.cache.chapters';

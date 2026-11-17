@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert';
-import { computeFileDiffHash, computeChangesetHash, StoryCache } from '../ai/storyCache';
+import { computeFileDiffHash, computeChangesetHash, computeFileReviewCacheHash, StoryCache } from '../ai/storyCache';
 import { DiffFile } from '../diff/types';
 import { StoryNarrative } from '../ai/types';
 
@@ -80,6 +80,27 @@ test('computeFileDiffHash should change when actual code changes occur', () => {
   const hashB = computeFileDiffHash('src/val.ts', hunksB);
 
   assert.notStrictEqual(hashA, hashB, 'Hashes should differ when code lines change');
+});
+
+test('computeFileReviewCacheHash should vary by provider, model, and review intention', () => {
+  const hash = computeFileReviewCacheHash('src/service.ts', 'diff-hash', 'Gemini', 'flash', 'Keep API compatible');
+
+  assert.strictEqual(
+    computeFileReviewCacheHash('src/service.ts', 'diff-hash', 'Gemini', 'flash', 'Keep API compatible'),
+    hash
+  );
+  assert.notStrictEqual(
+    computeFileReviewCacheHash('src/service.ts', 'diff-hash', 'OpenAI', 'flash', 'Keep API compatible'),
+    hash
+  );
+  assert.notStrictEqual(
+    computeFileReviewCacheHash('src/service.ts', 'diff-hash', 'Gemini', 'pro', 'Keep API compatible'),
+    hash
+  );
+  assert.notStrictEqual(
+    computeFileReviewCacheHash('src/service.ts', 'diff-hash', 'Gemini', 'flash', 'Change the API'),
+    hash
+  );
 });
 
 test('StoryCache should store and retrieve changeset narratives and individual file chapters', () => {

@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { DiffFile } from '../../diff/types';
-import { AIProvider, Chapter, IssueCallout, ReviewContext, StoryNarrative, resolveSeverityLevel } from '../types';
+import { AIProvider, Chapter, ReviewContext, StoryNarrative } from '../types';
 import { OrderingEngine } from '../orderingEngine';
+import { formatDiffsForPrompt, parseProviderStoryResponse } from './responseParser';
 
 export class GeminiProvider implements AIProvider {
   public readonly id = 'gemini';
@@ -41,26 +42,19 @@ export class GeminiProvider implements AIProvider {
 
     // First use OrderingEngine as topological baseline
     const orderedNodes = OrderingEngine.orderFiles(files);
-
-    // Prepare diff summary for prompt
-    const diffSummaries = orderedNodes.map((n, idx) => {
-      const f = n.file;
-      const hunksText = f.hunks.map(h => {
-        return h.lines.map(l => {
-          const prefix = l.type === 'add' ? '+' : l.type === 'delete' ? '-' : ' ';
-          return `${prefix}${l.content}`;
-        }).slice(0, 100).join('\n'); // limit lines per hunk to keep prompt compact
-      }).join('\n');
-
-      return `--- File ${idx + 1}: ${f.newPath || f.oldPath} (${n.role}, ${f.status}) ---
-${hunksText}`;
-    }).join('\n\n');
+    const diffSummaries = formatDiffsForPrompt(orderedNodes);
 
     const intentionBlock = ctx.intention?.promptContext ? `\n\n${ctx.intention.promptContext}` : '';
     const repoDefensesBlock = ctx.repoDefenses?.promptContext ? `\n\n${ctx.repoDefenses.promptContext}` : '';
 
+    const baseDesc = ctx.comparison?.base.label ? `${ctx.comparison.base.label} (${ctx.comparison.base.shortHash})` : ctx.comparison?.base.shortHash;
+    const targetDesc = ctx.comparison?.target.label ? `${ctx.comparison.target.label} (${ctx.comparison.target.shortHash})` : ctx.comparison?.target.shortHash;
+    const targetLabel = ctx.comparison
+      ? `comparison ${baseDesc} ("${ctx.comparison.base.subject}") -> ${targetDesc} ("${ctx.comparison.target.subject}")`
+      : `uncommitted Git changes`;
+
     const systemPrompt = `You are a principal engineer conducting a structured code review walkthrough.
-Your task is to organize uncommitted Git changes into an optimal, logical review sequence (foundations/contracts first, then business logic, then API endpoints, UI, and tests/configuration), so the reviewer can understand the changes in a clear, logical progression.
+Your task is to organize these Git changes (${targetLabel}) into an optimal, logical review sequence (foundations/contracts first, then business logic, then API endpoints, UI, and tests/configuration), so the reviewer can understand the changes in a clear, logical progression.
 
 CRITICAL INSTRUCTIONS:
 1. Do NOT write fiction, novel-like prose, or dramatized story text.
@@ -106,7 +100,7 @@ Return strictly valid JSON with this schema:
         {
           role: 'user',
           parts: [
-            { text: `${systemPrompt}${intentionBlock}${repoDefensesBlock}\n\nRepository: ${ctx.repoName}\nBranch: ${ctx.branch || 'main'}\n\nDiff Content:\n${diffSummaries}` }
+            { text: `${systemPrompt}${intentionBlock}${repoDefensesBlock}\n\nRepository: ${ctx.repoName}\n${ctx.comparison ? `Comparison: ${ctx.comparison.base.shortHash} -> ${ctx.comparison.target.shortHash}` : `Branch: ${ctx.branch || 'main'}`}\n\nDiff Content:\n${diffSummaries}` }
           ]
         }
       ],
@@ -116,62 +110,49 @@ Return strictly valid JSON with this schema:
       }
     };
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+          ? AbortSignal.timeout(60000)
+          : undefined;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+          signal,
+        });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Gemini API error (${response.status}): ${errText}`);
+        if (!response.ok) {
+          const errText = await response.text();
+          const retryable = response.status === 429 || response.status >= 500;
+          lastError = new Error(`Gemini API error (${response.status}): ${errText}`);
+          if (retryable && attempt === 0) {
+            if (typeof setTimeout === 'function') {
+              await new Promise(resolve => setTimeout(resolve, 800));
+            }
+            continue;
+          }
+          throw lastError;
+        }
+
+        const data: any = await response.json();
+        const textOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!textOutput) {
+          throw new Error('Gemini returned an empty response.');
+        }
+
+        return parseProviderStoryResponse(textOutput, files, ctx, 'Review Story');
+      } catch (err: any) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt === 0 && (err instanceof SyntaxError || /empty response|valid JSON/i.test(lastError.message))) {
+          continue;
+        }
+        throw lastError;
+      }
     }
 
-    const data: any = await response.json();
-    const textOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textOutput) {
-      throw new Error('Gemini returned an empty response.');
-    }
-
-    const parsed = JSON.parse(textOutput);
-
-    // Map diffFiles to chapters
-    const fileLookup = new Map(files.map(f => [f.newPath || f.oldPath, f]));
-
-    const chapters: Chapter[] = (parsed.chapters || []).map((ch: any, i: number) => {
-      const diffFile = fileLookup.get(ch.filePath) || files[i];
-      return {
-        index: i + 1,
-        filePath: ch.filePath || (diffFile ? (diffFile.newPath || diffFile.oldPath) : `File ${i + 1}`),
-        title: ch.title || `Chapter ${i + 1}`,
-        role: ch.role || 'Code Module',
-        summary: ch.summary || '',
-        narrative: ch.narrative || '',
-        keyPoints: ch.keyPoints || [],
-        issues: (ch.issues || []).map((iss: any, j: number) => ({
-          id: iss.id || `issue-${i}-${j}`,
-          severity: iss.severity || 'warning',
-          severityLevel: resolveSeverityLevel(iss),
-          title: iss.title || 'Potential Issue',
-          description: iss.description || '',
-          lineNumber: typeof iss.lineNumber === 'number' ? iss.lineNumber : undefined,
-          suggestion: iss.suggestion,
-        })),
-        isReviewed: false,
-        diffFile,
-      };
-    });
-
-    return {
-      title: parsed.title || 'Review Story',
-      synopsis: parsed.synopsis || '',
-      suggestedCommitMessage: parsed.suggestedCommitMessage || 'feat: update code changes',
-      chapters,
-      intentionContext: ctx.intention && ctx.intention.sources.length > 0 ? {
-        summary: ctx.intention.summary,
-        sources: ctx.intention.sources.map(s => s.title),
-      } : undefined,
-    };
+    throw lastError || new Error('Gemini request failed.');
   }
 
   public async askQuestion(question: string, chapter: Chapter, diffSnippet: string): Promise<string> {

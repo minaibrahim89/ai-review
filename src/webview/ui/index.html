@@ -41,7 +41,14 @@
           <option value="all">All Changes</option>
           <option value="staged">Staged Only</option>
           <option value="unstaged">Unstaged Only</option>
+          <option value="branches">Compare Branches...</option>
+          <option value="commits">Compare Commits...</option>
         </select>
+
+        <!-- Compare Branches or Commits Button -->
+        <button id="compare-commits-btn" type="button" class="icon-btn" title="Compare Branches or Commits">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="18" cy="18" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><path d="M11 18H8a2 2 0 0 1-2-2V9"></path></svg>
+        </button>
 
         <!-- Theme Style Selector -->
         <select id="theme-select" class="dropdown-select" title="Theme Style">
@@ -61,6 +68,20 @@
         </button>
       </div>
     </header>
+
+    <!-- Active Commit Comparison Bar -->
+    <div id="compare-bar" class="compare-bar" hidden>
+      <div class="compare-bar-info">
+        <span class="compare-bar-label">Comparing:</span>
+        <span id="compare-base-badge" class="compare-commit-pill" title="">base</span>
+        <span class="compare-arrow" aria-hidden="true">&rarr;</span>
+        <span id="compare-target-badge" class="compare-commit-pill" title="">target</span>
+      </div>
+      <div class="compare-bar-actions">
+        <button id="swap-commits-btn" type="button" class="action-btn-subtle" title="Swap base and target commits">&#8644; Swap</button>
+        <button id="change-commits-btn" type="button" class="action-btn-subtle" title="Choose different commits to compare">Change Commits</button>
+      </div>
+    </div>
 
     <!-- Main Walkthrough Container -->
     <main class="walkthrough-viewport" id="walkthrough-viewport">
@@ -202,6 +223,83 @@
         </div>
       </div>
     </div>
+
+    <!-- Compare Branches / Commits Dialog -->
+    <dialog id="compare-modal" class="compare-dialog" closedby="any" aria-labelledby="compare-modal-title">
+      <div class="modal-header">
+        <h3 id="compare-modal-title">Compare Branches or Commits</h3>
+        <button id="close-compare-btn" type="button" class="icon-btn" aria-label="Close compare dialog">&times;</button>
+      </div>
+      <form id="compare-form" class="modal-body compare-form" novalidate>
+        <fieldset class="compare-mode-fieldset">
+          <legend class="compare-label">Compare Mode</legend>
+          <div class="compare-mode-options">
+            <span class="compare-radio-option">
+              <input type="radio" id="compare-mode-branches" name="compareMode" value="branches" checked />
+              <label for="compare-mode-branches" class="compare-radio-label">Branches</label>
+            </span>
+            <span class="compare-radio-option">
+              <input type="radio" id="compare-mode-commits" name="compareMode" value="commits" />
+              <label for="compare-mode-commits" class="compare-radio-label">Commits</label>
+            </span>
+          </div>
+        </fieldset>
+
+        <div class="compare-field-group">
+          <label id="base-commit-label" for="base-commit-input" class="compare-label">Base Branch (From / Left State)</label>
+          <select id="base-commit-select" class="dropdown-select compare-select" aria-label="Choose base branch or commit">
+            <option value="">Loading...</option>
+          </select>
+          <input
+            type="text"
+            id="base-commit-input"
+            name="baseCommit"
+            class="compare-input"
+            placeholder="e.g. main, origin/main, HEAD~1, or commit SHA"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+            aria-describedby="base-commit-help"
+            required
+            autofocus
+          />
+          <span id="base-commit-help" class="compare-hint">Pick a branch or commit above, or enter any Git branch, tag, ref, or SHA.</span>
+        </div>
+
+        <div class="compare-swap-row">
+          <button id="modal-swap-commits-btn" type="button" class="action-btn-subtle" title="Swap base and target">&#8645; Swap Base &amp; Target</button>
+        </div>
+
+        <div class="compare-field-group">
+          <label id="target-commit-label" for="target-commit-input" class="compare-label">Target Branch (To / Right State)</label>
+          <select id="target-commit-select" class="dropdown-select compare-select" aria-label="Choose target branch or commit">
+            <option value="">Loading...</option>
+          </select>
+          <input
+            type="text"
+            id="target-commit-input"
+            name="targetCommit"
+            class="compare-input"
+            placeholder="e.g. feature/branch, HEAD, or commit SHA"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+            aria-describedby="target-commit-help"
+            required
+          />
+          <span id="target-commit-help" class="compare-hint">Target branch or commit state to compare against the base.</span>
+        </div>
+
+        <div id="compare-error-msg" class="compare-error" role="status" aria-live="polite"></div>
+
+        <div class="modal-actions">
+          <button id="cancel-compare-btn" type="button" class="action-btn-subtle">Cancel</button>
+          <button id="execute-compare-btn" type="submit" class="nav-btn primary">Compare Changes</button>
+        </div>
+      </form>
+    </dialog>
 
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="loading-overlay">

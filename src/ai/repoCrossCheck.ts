@@ -13,11 +13,26 @@ export class RepoCrossChecker {
    * Scans modified files and common workspace locations for existing defensive patterns:
    * imports, guards, try/catch blocks, schemas, and middleware.
    */
-  public static gatherRepoDefenses(repoRoot: string, diffFiles: DiffFile[]): RepoDefenseAnalysis {
+  public static gatherRepoDefenses(
+    repoRoot: string,
+    diffFiles: DiffFile[],
+    fileContents?: Map<string, string>
+  ): RepoDefenseAnalysis {
     const fileDefenses: FileDefenseContext[] = [];
 
     for (const file of diffFiles) {
       const relPath = file.newPath || file.oldPath;
+      const inMemory = fileContents?.get(relPath);
+      if (inMemory !== undefined) {
+        fileDefenses.push(this.analyzeFileContent(relPath, inMemory));
+        continue;
+      }
+
+      if (fileContents) {
+        // Explicit snapshot map provided (e.g. commit comparison): do not leak unrelated disk state
+        continue;
+      }
+
       const fullPath = path.isAbsolute(relPath) ? relPath : path.join(repoRoot, relPath);
 
       if (fs.existsSync(fullPath)) {
@@ -176,7 +191,8 @@ export class RepoCrossChecker {
     issue: IssueCallout,
     file: DiffFile,
     repoRoot?: string,
-    fileDefense?: FileDefenseContext
+    fileDefense?: FileDefenseContext,
+    fileContents?: Map<string, string>
   ): { addressed: boolean; reason?: string } {
     const textToCheck = `${issue.title} ${issue.description}`.toLowerCase();
     const relPath = (file.newPath || file.oldPath || '').toLowerCase();
@@ -209,14 +225,25 @@ export class RepoCrossChecker {
       }
     }
 
-    // If repoRoot is available, inspect the actual surrounding file lines on disk
-    if (repoRoot && (file.newPath || file.oldPath)) {
-      const fullPath = path.join(repoRoot, file.newPath || file.oldPath);
+    // Inspect the actual surrounding file lines (from snapshot map if provided, otherwise from disk)
+    const relFilePath = file.newPath || file.oldPath;
+    let fileContent: string | undefined = relFilePath ? fileContents?.get(relFilePath) : undefined;
+    if (fileContent === undefined && !fileContents && repoRoot && relFilePath) {
+      const fullPath = path.join(repoRoot, relFilePath);
       if (fs.existsSync(fullPath)) {
         try {
-          const content = fs.readFileSync(fullPath, 'utf8');
-          const lines = content.split('\n');
-          const targetLine = issue.lineNumber || 1;
+          fileContent = fs.readFileSync(fullPath, 'utf8');
+        } catch {
+          // ignore read error
+        }
+      }
+    }
+
+    if (fileContent !== undefined) {
+      try {
+        const content = fileContent;
+        const lines = content.split('\n');
+        const targetLine = issue.lineNumber || 1;
 
           // Extract a 40-line window around targetLine
           const start = Math.max(0, targetLine - 25);
@@ -303,7 +330,6 @@ export class RepoCrossChecker {
         } catch {
           // ignore read error
         }
-      }
     }
 
     return { addressed: false };
@@ -316,12 +342,13 @@ export class RepoCrossChecker {
     issues: IssueCallout[],
     file: DiffFile,
     repoRoot?: string,
-    fileDefense?: FileDefenseContext
+    fileDefense?: FileDefenseContext,
+    fileContents?: Map<string, string>
   ): IssueCallout[] {
     const verified: IssueCallout[] = [];
 
     for (const issue of issues) {
-      const check = this.isIssueAlreadyAddressed(issue, file, repoRoot, fileDefense);
+      const check = this.isIssueAlreadyAddressed(issue, file, repoRoot, fileDefense, fileContents);
       if (check.addressed) {
         console.log(
           `[RepoCrossCheck] Filtered addressed issue "${issue.title}" on ${file.newPath || file.oldPath}:${issue.lineNumber || '?'}: ${check.reason}`
@@ -343,14 +370,15 @@ export class RepoCrossChecker {
   public static verifyStoryIssues(
     story: StoryNarrative,
     diffFiles: DiffFile[],
-    repoRoot?: string
+    repoRoot?: string,
+    fileContents?: Map<string, string>
   ): StoryNarrative {
     const fileMap = new Map(diffFiles.map(f => [f.newPath || f.oldPath, f]));
 
     for (const chapter of story.chapters) {
       const diffFile = fileMap.get(chapter.filePath);
       if (diffFile && chapter.issues && chapter.issues.length > 0) {
-        chapter.issues = this.verifyAndFilterIssues(chapter.issues, diffFile, repoRoot);
+        chapter.issues = this.verifyAndFilterIssues(chapter.issues, diffFile, repoRoot, undefined, fileContents);
       }
     }
 

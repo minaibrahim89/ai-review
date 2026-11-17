@@ -1292,6 +1292,199 @@ body.vscode-high-contrast-light .crosscheck-badge {
   gap: 10px;
 }
 
+/* ----------------- Commit Comparison Bar & Dialog ----------------- */
+.compare-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 14px;
+  background-color: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.compare-bar[hidden] {
+  display: none;
+}
+
+.compare-bar-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.compare-bar-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.compare-commit-pill {
+  background-color: var(--accent-soft);
+  color: var(--accent-text);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-arrow {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.compare-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+dialog.compare-dialog {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 85vh;
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+dialog.compare-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+dialog.compare-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.compare-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(2px);
+}
+
+.compare-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.compare-mode-fieldset {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 12px 10px;
+}
+
+.compare-mode-fieldset legend {
+  padding: 0 6px;
+}
+
+.compare-mode-options {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-top: 2px;
+}
+
+.compare-radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compare-radio-option input[type="radio"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.compare-radio-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.compare-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.compare-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.compare-select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.compare-input {
+  width: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  outline: none;
+}
+
+.compare-input:focus-visible,
+.compare-select:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+  border-color: var(--border-focus);
+}
+
+.compare-input[aria-invalid="true"],
+.compare-input:user-invalid {
+  border-color: #ef4444;
+}
+
+.compare-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.compare-swap-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.compare-error {
+  min-height: 18px;
+  font-size: 12px;
+  color: #f87171;
+  line-height: 1.4;
+}
+
+body.vscode-light .compare-error,
+body.vscode-high-contrast-light .compare-error {
+  color: #b91c1c;
+}
+
 /* ----------------- Loading Overlay ----------------- */
 .loading-overlay {
   position: fixed;

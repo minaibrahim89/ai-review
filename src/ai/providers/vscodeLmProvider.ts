@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { DiffFile } from '../../diff/types';
-import { AIProvider, Chapter, ReviewContext, StoryNarrative, resolveSeverityLevel } from '../types';
+import { AIProvider, Chapter, ReviewContext, StoryNarrative } from '../types';
 import { OrderingEngine } from '../orderingEngine';
+import { formatDiffsForPrompt, parseProviderStoryResponse } from './responseParser';
 
 export class VSCodeLMProvider implements AIProvider {
   public readonly id = 'vscode-lm';
@@ -19,44 +20,49 @@ export class VSCodeLMProvider implements AIProvider {
     }
   }
 
-  private async getChatModel(): Promise<vscode.LanguageModelChat | undefined> {
+  private async getCandidateModels(): Promise<vscode.LanguageModelChat[]> {
     try {
-      const models = await vscode.lm.selectChatModels({ family: 'gpt-6-luna' });
-      if (models.length > 0) return models[0];
+      const allModels = await vscode.lm.selectChatModels();
+      if (allModels.length === 0) return [];
 
-      const anyModels = await vscode.lm.selectChatModels();
-      return anyModels.length > 0 ? anyModels[0] : undefined;
+      // Prioritize stronger chat families while keeping all models as fallbacks
+      const preferredOrder = ['gpt-6-luna', 'gpt-4o', 'claude-3.5-sonnet', 'claude-3.7-sonnet', 'gemini', 'gpt-4'];
+      const rank = (m: vscode.LanguageModelChat) => {
+        const key = `${m.family || ''} ${m.id || ''}`.toLowerCase();
+        const idx = preferredOrder.findIndex(p => key.includes(p));
+        return idx === -1 ? preferredOrder.length : idx;
+      };
+      return [...allModels].sort((a, b) => rank(a) - rank(b));
     } catch {
-      return undefined;
+      return [];
     }
   }
 
+  private async getChatModel(): Promise<vscode.LanguageModelChat | undefined> {
+    const models = await this.getCandidateModels();
+    return models[0];
+  }
+
   public async generateStory(files: DiffFile[], ctx: ReviewContext): Promise<StoryNarrative> {
-    const model = await this.getChatModel();
-    if (!model) {
+    const models = await this.getCandidateModels();
+    if (models.length === 0) {
       throw new Error('No VS Code language model found. Ensure GitHub Copilot or a language model provider extension is installed.');
     }
 
     const orderedNodes = OrderingEngine.orderFiles(files);
-
-    const diffSummaries = orderedNodes.map((n, idx) => {
-      const f = n.file;
-      const hunksText = f.hunks.map(h => {
-        return h.lines.map(l => {
-          const prefix = l.type === 'add' ? '+' : l.type === 'delete' ? '-' : ' ';
-          return `${prefix}${l.content}`;
-        }).slice(0, 100).join('\n');
-      }).join('\n');
-
-      return `--- File ${idx + 1}: ${f.newPath || f.oldPath} (${n.role}, ${f.status}) ---
-${hunksText}`;
-    }).join('\n\n');
+    const diffSummaries = formatDiffsForPrompt(orderedNodes);
 
     const intentionBlock = ctx.intention?.promptContext ? `\n\n${ctx.intention.promptContext}` : '';
     const repoDefensesBlock = ctx.repoDefenses?.promptContext ? `\n\n${ctx.repoDefenses.promptContext}` : '';
 
+    const baseDesc = ctx.comparison?.base.label ? `${ctx.comparison.base.label} (${ctx.comparison.base.shortHash})` : ctx.comparison?.base.shortHash;
+    const targetDesc = ctx.comparison?.target.label ? `${ctx.comparison.target.label} (${ctx.comparison.target.shortHash})` : ctx.comparison?.target.shortHash;
+    const scopeDescription = ctx.comparison
+      ? `comparing ${baseDesc} ("${ctx.comparison.base.subject}") to ${targetDesc} ("${ctx.comparison.target.subject}")`
+      : `${ctx.branch || 'main'}`;
+
     const prompt = `You are a principal engineer conducting a structured code review walkthrough.
-Analyze these Git changes in repository "${ctx.repoName}" (${ctx.branch || 'main'}).
+Analyze these Git changes in repository "${ctx.repoName}" (${scopeDescription}).
 Organize the files into an optimal, logical review sequence (data contracts/schemas first, then business logic, then API endpoints, then UI, then tests/configs).
 
 CRITICAL INSTRUCTIONS:
@@ -102,53 +108,25 @@ Diffs to analyze:
 ${diffSummaries}`;
 
     const messages = [vscode.LanguageModelChatMessage.User(prompt)];
-    const tokenSource = new vscode.CancellationTokenSource();
-    const response = await model.sendRequest(messages, {}, tokenSource.token);
+    let lastError: Error | undefined;
 
-    let fullText = '';
-    for await (const chunk of response.text) {
-      fullText += chunk;
+    for (const model of models.slice(0, 3)) {
+      const tokenSource = new vscode.CancellationTokenSource();
+      try {
+        const response = await model.sendRequest(messages, {}, tokenSource.token);
+        let fullText = '';
+        for await (const chunk of response.text) {
+          fullText += chunk;
+        }
+        return parseProviderStoryResponse(fullText, files, ctx, 'Review Walkthrough');
+      } catch (err: any) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+      } finally {
+        tokenSource.dispose();
+      }
     }
 
-    // Strip code fences if model enclosed in ```json
-    const cleaned = fullText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
-
-    const fileLookup = new Map(files.map(f => [f.newPath || f.oldPath, f]));
-    const chapters: Chapter[] = (parsed.chapters || []).map((ch: any, i: number) => {
-      const diffFile = fileLookup.get(ch.filePath) || files[i];
-      return {
-        index: i + 1,
-        filePath: ch.filePath || (diffFile ? (diffFile.newPath || diffFile.oldPath) : `File ${i + 1}`),
-        title: ch.title || `Chapter ${i + 1}`,
-        role: ch.role || 'Code Module',
-        summary: ch.summary || '',
-        narrative: ch.narrative || '',
-        keyPoints: ch.keyPoints || [],
-        issues: (ch.issues || []).map((iss: any, j: number) => ({
-          id: iss.id || `issue-${i}-${j}`,
-          severity: iss.severity || 'warning',
-          severityLevel: resolveSeverityLevel(iss),
-          title: iss.title || 'Potential Issue',
-          description: iss.description || '',
-          lineNumber: typeof iss.lineNumber === 'number' ? iss.lineNumber : undefined,
-          suggestion: iss.suggestion,
-        })),
-        isReviewed: false,
-        diffFile,
-      };
-    });
-
-    return {
-      title: parsed.title || 'Review Walkthrough',
-      synopsis: parsed.synopsis || '',
-      suggestedCommitMessage: parsed.suggestedCommitMessage || 'feat: update changes',
-      chapters,
-      intentionContext: ctx.intention && ctx.intention.sources.length > 0 ? {
-        summary: ctx.intention.summary,
-        sources: ctx.intention.sources.map(s => s.title),
-      } : undefined,
-    };
+    throw lastError || new Error('VS Code Language Model failed to generate a valid review.');
   }
 
   public async askQuestion(question: string, chapter: Chapter, diffSnippet: string): Promise<string> {

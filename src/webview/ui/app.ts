@@ -1,4 +1,4 @@
-import { DiffScope, GitRepoInfo } from '../../git/types';
+import { CommitComparison, CommitRef, DiffScope, GitBranchInfo, GitRepoInfo } from '../../git/types';
 import { Chapter, IssueCallout, StoryNarrative, resolveSeverityLevel } from '../../ai/types';
 import { ExtensionMessageToWebview, WebviewMessageToExtension } from '../types';
 import { escapeHtml, formatInlineMarkdown, formatMarkdown } from '../markdown';
@@ -18,6 +18,14 @@ interface AppState {
   currentRepo?: GitRepoInfo;
   repos: GitRepoInfo[];
   scope: DiffScope;
+  lastWorkingScope: Exclude<DiffScope, 'commits'>;
+  comparison?: CommitComparison;
+  commits: CommitRef[];
+  branches: GitBranchInfo[];
+  compareMode: 'branches' | 'commits';
+  defaultCompareBase?: string;
+  defaultCompareTarget?: string;
+  isCompareSubmitting: boolean;
   providerName: string;
   themeStyle: 'zen' | 'editorial' | 'compact';
 }
@@ -26,6 +34,11 @@ const state: AppState = {
   currentChapterIndex: 0,
   repos: [],
   scope: 'all',
+  lastWorkingScope: 'all',
+  commits: [],
+  branches: [],
+  compareMode: 'branches',
+  isCompareSubmitting: false,
   providerName: 'Heuristic',
   themeStyle: 'zen',
 };
@@ -38,6 +51,12 @@ const elements = {
   chapterCounter: document.getElementById('chapter-counter') as HTMLElement,
   progressBarFill: document.getElementById('progress-bar-fill') as HTMLElement,
   scopeSelect: document.getElementById('scope-select') as HTMLSelectElement,
+  compareCommitsBtn: document.getElementById('compare-commits-btn') as HTMLButtonElement,
+  compareBar: document.getElementById('compare-bar') as HTMLElement,
+  compareBaseBadge: document.getElementById('compare-base-badge') as HTMLElement,
+  compareTargetBadge: document.getElementById('compare-target-badge') as HTMLElement,
+  swapCommitsBtn: document.getElementById('swap-commits-btn') as HTMLButtonElement,
+  changeCommitsBtn: document.getElementById('change-commits-btn') as HTMLButtonElement,
   themeSelect: document.getElementById('theme-select') as HTMLSelectElement,
   openDiffBtn: document.getElementById('open-diff-btn') as HTMLButtonElement,
   refreshBtn: document.getElementById('refresh-btn') as HTMLButtonElement,
@@ -92,6 +111,23 @@ const elements = {
   executeCommitBtn: document.getElementById('execute-commit-btn') as HTMLButtonElement,
   commitMessageInput: document.getElementById('commit-message-input') as HTMLTextAreaElement,
 
+  // Compare Branches / Commits Dialog
+  compareModal: document.getElementById('compare-modal') as HTMLDialogElement,
+  closeCompareBtn: document.getElementById('close-compare-btn') as HTMLButtonElement,
+  cancelCompareBtn: document.getElementById('cancel-compare-btn') as HTMLButtonElement,
+  compareForm: document.getElementById('compare-form') as HTMLFormElement,
+  compareModeBranches: document.getElementById('compare-mode-branches') as HTMLInputElement,
+  compareModeCommits: document.getElementById('compare-mode-commits') as HTMLInputElement,
+  baseCommitLabel: document.getElementById('base-commit-label') as HTMLLabelElement,
+  targetCommitLabel: document.getElementById('target-commit-label') as HTMLLabelElement,
+  baseCommitSelect: document.getElementById('base-commit-select') as HTMLSelectElement,
+  baseCommitInput: document.getElementById('base-commit-input') as HTMLInputElement,
+  targetCommitSelect: document.getElementById('target-commit-select') as HTMLSelectElement,
+  targetCommitInput: document.getElementById('target-commit-input') as HTMLInputElement,
+  modalSwapCommitsBtn: document.getElementById('modal-swap-commits-btn') as HTMLButtonElement,
+  compareErrorMsg: document.getElementById('compare-error-msg') as HTMLElement,
+  executeCompareBtn: document.getElementById('execute-compare-btn') as HTMLButtonElement,
+
   // Loading
   loadingOverlay: document.getElementById('loading-overlay') as HTMLElement,
   loadingMessage: document.getElementById('loading-message') as HTMLElement,
@@ -113,11 +149,127 @@ function init() {
   });
 
   elements.scopeSelect.addEventListener('change', (e) => {
-    const scope = (e.target as HTMLSelectElement).value as DiffScope;
+    const val = (e.target as HTMLSelectElement).value;
+    if (val === 'branches') {
+      openCompareModal('branches');
+      return;
+    }
+    if (val === 'commits') {
+      openCompareModal('commits');
+      return;
+    }
+    const scope = val as Exclude<DiffScope, 'commits'>;
+    state.lastWorkingScope = scope;
     state.scope = scope;
+    state.comparison = undefined;
     showLoading(`Filtering changes (${scope})...`);
     vscode.postMessage({ type: 'changeScope', scope });
   });
+
+  elements.compareCommitsBtn.addEventListener('click', () => openCompareModal());
+  elements.changeCommitsBtn.addEventListener('click', () => openCompareModal());
+  elements.compareModeBranches.addEventListener('change', () => {
+    if (elements.compareModeBranches.checked) {
+      setCompareMode('branches', true);
+    }
+  });
+  elements.compareModeCommits.addEventListener('change', () => {
+    if (elements.compareModeCommits.checked) {
+      setCompareMode('commits', true);
+    }
+  });
+  elements.swapCommitsBtn.addEventListener('click', () => {
+    if (state.comparison) {
+      showLoading('Swapping compared commits...');
+      vscode.postMessage({ type: 'swapCompareCommits' });
+    }
+  });
+
+  elements.closeCompareBtn.addEventListener('click', closeCompareModal);
+  elements.cancelCompareBtn.addEventListener('click', closeCompareModal);
+  elements.modalSwapCommitsBtn.addEventListener('click', () => {
+    const prevBase = elements.baseCommitInput.value;
+    elements.baseCommitInput.value = elements.targetCommitInput.value;
+    elements.targetCommitInput.value = prevBase;
+    syncSelectToInput(elements.baseCommitSelect, elements.baseCommitInput.value);
+    syncSelectToInput(elements.targetCommitSelect, elements.targetCommitInput.value);
+    clearCompareError();
+  });
+
+  elements.baseCommitSelect.addEventListener('change', () => {
+    if (elements.baseCommitSelect.value) {
+      elements.baseCommitInput.value = elements.baseCommitSelect.value;
+      clearCompareError();
+    }
+  });
+
+  elements.targetCommitSelect.addEventListener('change', () => {
+    if (elements.targetCommitSelect.value) {
+      elements.targetCommitInput.value = elements.targetCommitSelect.value;
+      clearCompareError();
+    }
+  });
+
+  elements.baseCommitInput.addEventListener('input', () => {
+    clearCompareError('base');
+    syncSelectToInput(elements.baseCommitSelect, elements.baseCommitInput.value);
+  });
+
+  elements.targetCommitInput.addEventListener('input', () => {
+    clearCompareError('target');
+    syncSelectToInput(elements.targetCommitSelect, elements.targetCommitInput.value);
+  });
+
+  elements.compareForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (state.isCompareSubmitting) return;
+
+    const baseRef = elements.baseCommitInput.value.trim();
+    const targetRef = elements.targetCommitInput.value.trim();
+
+    if (!baseRef && !targetRef) {
+      setCompareError('Enter both a base commit and a target commit.', 'both');
+      return;
+    }
+    if (!baseRef) {
+      setCompareError('Enter a base commit reference or SHA.', 'base');
+      return;
+    }
+    if (!targetRef) {
+      setCompareError('Enter a target commit reference or SHA.', 'target');
+      return;
+    }
+
+    clearCompareError();
+    state.isCompareSubmitting = true;
+    elements.executeCompareBtn.disabled = true;
+    elements.executeCompareBtn.textContent = 'Comparing...';
+    vscode.postMessage({ type: 'compareCommits', baseRef, targetRef });
+  });
+
+  elements.compareModal.addEventListener('close', () => {
+    if ('returnValue' in elements.compareModal) {
+      elements.compareModal.returnValue = '';
+    }
+    resetCompareSubmitState();
+    elements.scopeSelect.value = state.scope;
+  });
+
+  if (typeof HTMLDialogElement !== 'undefined' && !('closedBy' in HTMLDialogElement.prototype)) {
+    let pressedOutside = false;
+    const isOutside = (e: PointerEvent) => {
+      const r = elements.compareModal.getBoundingClientRect();
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    elements.compareModal.addEventListener('pointerdown', (e) => {
+      pressedOutside = isOutside(e);
+    });
+    elements.compareModal.addEventListener('pointerup', (e) => {
+      if (pressedOutside && isOutside(e)) {
+        closeCompareModal();
+      }
+    });
+  }
 
   elements.themeSelect.addEventListener('change', (e) => {
     const theme = (e.target as HTMLSelectElement).value as 'zen' | 'editorial' | 'compact';
@@ -227,7 +379,6 @@ function init() {
 
 function handleExtensionMessage(event: MessageEvent<ExtensionMessageToWebview>) {
   const message = event.data;
-  hideLoading();
 
   switch (message.type) {
     case 'init': {
@@ -236,6 +387,10 @@ function handleExtensionMessage(event: MessageEvent<ExtensionMessageToWebview>) 
       state.currentRepo = message.payload.currentRepo;
       state.repos = message.payload.repos;
       state.scope = message.payload.scope;
+      if (message.payload.scope !== 'commits') {
+        state.lastWorkingScope = message.payload.scope;
+      }
+      state.comparison = message.payload.comparison;
       state.currentChapterIndex = 0;
 
       if (message.payload.themeStyle) {
@@ -243,13 +398,40 @@ function handleExtensionMessage(event: MessageEvent<ExtensionMessageToWebview>) 
       }
 
       elements.scopeSelect.value = state.scope;
+      closeCompareModal();
       renderStory();
       break;
     }
 
     case 'updateStory': {
       state.story = message.payload.story;
+      if (message.payload.providerName) {
+        state.providerName = message.payload.providerName;
+      }
+      if (message.payload.scope) {
+        state.scope = message.payload.scope;
+        elements.scopeSelect.value = state.scope;
+      }
+      if ('comparison' in message.payload) {
+        state.comparison = message.payload.comparison;
+      }
+      closeCompareModal();
       renderStory();
+      break;
+    }
+
+    case 'commitsList': {
+      state.commits = message.payload.commits || [];
+      state.branches = message.payload.branches || [];
+      state.defaultCompareBase = message.payload.currentBase;
+      state.defaultCompareTarget = message.payload.currentTarget;
+      populateCompareSelectors(true);
+      break;
+    }
+
+    case 'compareError': {
+      resetCompareSubmitState();
+      setCompareError(message.payload.message, message.payload.invalidField);
       break;
     }
 
@@ -303,14 +485,49 @@ function getCurrentChapter(): Chapter | undefined {
   return state.story.chapters[state.currentChapterIndex];
 }
 
+function formatCompareRefShort(ref: CommitRef): string {
+  return ref.label || ref.shortHash;
+}
+
+function formatCompareRefPill(ref: CommitRef): string {
+  return ref.label ? `${ref.label} (${ref.shortHash})` : ref.shortHash;
+}
+
+function updateComparisonHeader() {
+  if (state.scope === 'commits' && state.comparison) {
+    const { base, target } = state.comparison;
+    const baseShort = formatCompareRefShort(base);
+    const targetShort = formatCompareRefShort(target);
+    elements.compareBar.hidden = false;
+    elements.compareBaseBadge.textContent = `${formatCompareRefPill(base)}: ${base.subject}`;
+    elements.compareBaseBadge.title = `${base.hash} — ${base.subject}`;
+    elements.compareTargetBadge.textContent = `${formatCompareRefPill(target)}: ${target.subject}`;
+    elements.compareTargetBadge.title = `${target.hash} — ${target.subject}`;
+    elements.repoBranch.textContent = `${baseShort} ↔ ${targetShort}`;
+    elements.repoBranch.title = `Comparing ${formatCompareRefPill(base)} (${base.subject}) → ${formatCompareRefPill(target)} (${target.subject})`;
+  } else {
+    elements.compareBar.hidden = true;
+    elements.repoBranch.textContent = state.currentRepo?.headBranch || 'main';
+    elements.repoBranch.title = '';
+  }
+}
+
 function renderStory() {
+  const pendingCount = state.story?.chapters.filter(chapter => chapter.isPending).length || 0;
+  if (pendingCount > 0) {
+    showLoading(`AI analysis in progress for ${pendingCount} file${pendingCount === 1 ? '' : 's'}...`);
+  } else {
+    hideLoading();
+  }
+
+  updateComparisonHeader();
+
   if (!state.story || state.story.chapters.length === 0) {
     renderEmptyState();
     return;
   }
 
   elements.storyTitle.textContent = state.story.title;
-  elements.repoBranch.textContent = state.currentRepo?.headBranch || 'main';
   elements.synopsisText.innerHTML = formatMarkdown(state.story.synopsis);
 
   renderChapter();
@@ -319,13 +536,32 @@ function renderStory() {
 }
 
 function renderEmptyState() {
-  elements.storyTitle.textContent = 'No Uncommitted Changes';
-  elements.chapterCounter.textContent = '0 of 0';
-  elements.filePath.textContent = 'Working Tree Clean';
-  elements.chapterTitle.textContent = 'Everything is up to date!';
-  elements.chapterNarrative.innerHTML = '<p class="prose-p">No modified, staged, or untracked changes were detected in the selected repository scope.</p>';
-  elements.keyPointsList.innerHTML = '<li class="key-point-item">Working tree is clean. Make some edits and click Refresh!</li>';
+  if (state.scope === 'commits') {
+    const hasComparison = !!state.comparison;
+    const baseShort = hasComparison ? formatCompareRefShort(state.comparison!.base) : '';
+    const targetShort = hasComparison ? formatCompareRefShort(state.comparison!.target) : '';
+    elements.storyTitle.textContent = state.story?.title || (hasComparison ? 'No Differences Found' : 'Compare Branches or Commits');
+    elements.chapterCounter.textContent = '0 of 0';
+    elements.filePath.textContent = hasComparison
+      ? `${baseShort} ↔ ${targetShort}`
+      : 'No Comparison Selected';
+    elements.chapterTitle.textContent = hasComparison
+      ? 'No differences between the selected states'
+      : 'Select two branches or commits to compare';
+    elements.chapterNarrative.innerHTML = hasComparison
+      ? `<p class="prose-p">No file differences were found between <code>${escapeHtml(baseShort)}</code> and <code>${escapeHtml(targetShort)}</code>.</p>`
+      : '<p class="prose-p">Choose a base and target branch or commit to compare their repository states.</p>';
+    elements.keyPointsList.innerHTML = '<li class="key-point-item">Click Change Commits above to pick a different pair of branches or commits.</li>';
+  } else {
+    elements.storyTitle.textContent = 'No Uncommitted Changes';
+    elements.chapterCounter.textContent = '0 of 0';
+    elements.filePath.textContent = 'Working Tree Clean';
+    elements.chapterTitle.textContent = 'Everything is up to date!';
+    elements.chapterNarrative.innerHTML = '<p class="prose-p">No modified, staged, or untracked changes were detected in the selected repository scope.</p>';
+    elements.keyPointsList.innerHTML = '<li class="key-point-item">Working tree is clean. Make some edits and click Refresh!</li>';
+  }
   elements.issuesList.innerHTML = '';
+  elements.stageFileBtn.style.display = state.scope === 'commits' ? 'none' : '';
   elements.prevChapterBtn.disabled = true;
   elements.nextChapterBtn.disabled = true;
   elements.finishCommitBtn.style.display = 'none';
@@ -354,14 +590,20 @@ function renderChapter() {
   const deletions = current.diffFile?.deletions || 0;
   elements.fileDiffStats.textContent = `+${additions} -${deletions}`;
 
+  const isCommitComparison = state.scope === 'commits';
   const isStaged = current.diffFile?.status !== 'untracked' && current.diffFile?.status !== 'modified';
+  elements.stageFileBtn.style.display = isCommitComparison ? 'none' : '';
   elements.stageFileBtn.textContent = isStaged ? 'Unstage' : 'Stage';
 
   // Step Narrative Card
   elements.chapterRoleBadge.textContent = current.role;
   elements.aiProviderBadge.textContent = state.providerName || 'AI Review';
   elements.chapterTitle.textContent = current.title;
-  elements.chapterNarrative.innerHTML = formatMarkdown(current.narrative);
+  if (current.isPending) {
+    elements.chapterNarrative.textContent = current.narrative;
+  } else {
+    elements.chapterNarrative.innerHTML = formatMarkdown(current.narrative);
+  }
 
   // Intention Banner
   if (state.story?.intentionContext) {
@@ -388,14 +630,22 @@ function renderChapter() {
   // Clear Ask AI conversation for new file
   elements.askAiConversation.innerHTML = '';
   elements.askAiInput.value = '';
+  elements.askAiInput.disabled = !!current.isPending;
+  elements.askAiSubmitBtn.disabled = !!current.isPending;
 
   // Bottom buttons
   elements.prevChapterBtn.disabled = currentIdx === 0;
 
   if (currentIdx >= total - 1) {
-    elements.nextChapterBtn.style.display = 'none';
-    elements.nextChapterBtn.disabled = true;
-    elements.finishCommitBtn.style.display = 'inline-block';
+    if (isCommitComparison) {
+      elements.nextChapterBtn.style.display = 'inline-block';
+      elements.nextChapterBtn.disabled = true;
+      elements.finishCommitBtn.style.display = 'none';
+    } else {
+      elements.nextChapterBtn.style.display = 'none';
+      elements.nextChapterBtn.disabled = true;
+      elements.finishCommitBtn.style.display = 'inline-block';
+    }
   } else {
     elements.nextChapterBtn.style.display = 'inline-block';
     elements.nextChapterBtn.disabled = false;
@@ -405,6 +655,11 @@ function renderChapter() {
 
 function renderIssues(issues: IssueCallout[]) {
   elements.issuesList.innerHTML = '';
+
+  if (getCurrentChapter()?.isPending) {
+    elements.issuesList.innerHTML = '<div class="issues-empty-state">AI analysis is in progress for this file.</div>';
+    return;
+  }
 
   if (issues.length === 0) {
     elements.issuesList.innerHTML = '<div class="issues-empty-state">No automated issues detected. Changes look clean and well-structured!</div>';
@@ -641,6 +896,172 @@ function openCommitModal() {
 
 function closeCommitModal() {
   elements.commitModal.classList.remove('open');
+}
+
+function openCompareModal(preferredMode?: 'branches' | 'commits') {
+  clearCompareError();
+  resetCompareSubmitState();
+  const mode = preferredMode || (state.comparison ? (state.comparison.base.label || state.comparison.target.label ? 'branches' : 'commits') : state.compareMode);
+  setCompareMode(mode, false);
+  if (state.comparison) {
+    elements.baseCommitInput.value = formatCompareRefShort(state.comparison.base);
+    elements.targetCommitInput.value = formatCompareRefShort(state.comparison.target);
+  }
+  vscode.postMessage({ type: 'requestCommits' });
+  if (typeof elements.compareModal.showModal === 'function') {
+    if (!elements.compareModal.open) {
+      elements.compareModal.showModal();
+    }
+  }
+}
+
+function setCompareMode(mode: 'branches' | 'commits', resetDefaults: boolean) {
+  state.compareMode = mode;
+  elements.compareModeBranches.checked = mode === 'branches';
+  elements.compareModeCommits.checked = mode === 'commits';
+
+  if (mode === 'branches') {
+    elements.baseCommitLabel.textContent = 'Base Branch (From / Left State)';
+    elements.targetCommitLabel.textContent = 'Target Branch (To / Right State)';
+    elements.baseCommitInput.placeholder = 'e.g. main, origin/main, HEAD~1, or commit SHA';
+    elements.targetCommitInput.placeholder = 'e.g. feature/branch, HEAD, or commit SHA';
+  } else {
+    elements.baseCommitLabel.textContent = 'Base Commit (From / Left State)';
+    elements.targetCommitLabel.textContent = 'Target Commit (To / Right State)';
+    elements.baseCommitInput.placeholder = 'e.g. HEAD~1, main, v1.0.0, or commit SHA';
+    elements.targetCommitInput.placeholder = 'e.g. HEAD, feature-branch, or commit SHA';
+  }
+
+  if (resetDefaults) {
+    elements.baseCommitInput.value = '';
+    elements.targetCommitInput.value = '';
+    clearCompareError();
+  }
+  populateCompareSelectors(resetDefaults);
+}
+
+function closeCompareModal() {
+  if (typeof elements.compareModal.close === 'function' && elements.compareModal.open) {
+    elements.compareModal.close();
+  }
+  resetCompareSubmitState();
+  elements.scopeSelect.value = state.scope;
+}
+
+function resetCompareSubmitState() {
+  state.isCompareSubmitting = false;
+  elements.executeCompareBtn.disabled = false;
+  elements.executeCompareBtn.textContent = 'Compare Changes';
+}
+
+function clearCompareError(field?: 'base' | 'target') {
+  elements.compareErrorMsg.textContent = '';
+  if (!field || field === 'base') {
+    elements.baseCommitInput.removeAttribute('aria-invalid');
+  }
+  if (!field || field === 'target') {
+    elements.targetCommitInput.removeAttribute('aria-invalid');
+  }
+}
+
+function setCompareError(message: string, invalidField?: 'base' | 'target' | 'both') {
+  elements.compareErrorMsg.textContent = message;
+  if (invalidField === 'base' || invalidField === 'both') {
+    elements.baseCommitInput.setAttribute('aria-invalid', 'true');
+  }
+  if (invalidField === 'target' || invalidField === 'both') {
+    elements.targetCommitInput.setAttribute('aria-invalid', 'true');
+  }
+  if (invalidField === 'target') {
+    elements.targetCommitInput.focus?.();
+  } else {
+    elements.baseCommitInput.focus?.();
+  }
+}
+
+function syncSelectToInput(selectEl: HTMLSelectElement, inputVal: string) {
+  const trimmed = inputVal.trim();
+  const options = Array.from(selectEl.options || []);
+  const match = options.find(opt => opt.value === trimmed);
+  selectEl.value = match ? match.value : '';
+}
+
+function populateCompareSelectors(applyDefaults: boolean) {
+  const isBranchMode = state.compareMode === 'branches';
+
+  const buildBranchOptions = (selectEl: HTMLSelectElement, placeholder: string) => {
+    selectEl.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '';
+    customOpt.textContent = state.branches.length > 0 ? placeholder : 'No branches found (enter ref below)';
+    selectEl.appendChild(customOpt);
+
+    for (const b of state.branches) {
+      const opt = document.createElement('option');
+      opt.value = b.name;
+      const scopeTag = b.isCurrent ? ' (current)' : b.isRemote ? ' (remote)' : '';
+      const dateTag = b.date ? ` • ${b.date}` : '';
+      opt.textContent = `${b.name}${scopeTag} — ${b.shortHash} ${b.subject}${dateTag}`;
+      selectEl.appendChild(opt);
+    }
+  };
+
+  const buildCommitOptions = (selectEl: HTMLSelectElement, placeholder: string) => {
+    selectEl.innerHTML = '';
+    const customOpt = document.createElement('option');
+    customOpt.value = '';
+    customOpt.textContent = state.commits.length > 0 ? placeholder : 'No commits found (enter ref below)';
+    selectEl.appendChild(customOpt);
+
+    for (const c of state.commits) {
+      const opt = document.createElement('option');
+      opt.value = c.shortHash;
+      const refsTag = c.refs ? ` [${c.refs}]` : '';
+      const dateTag = c.date ? ` (${c.date})` : '';
+      opt.textContent = `${c.shortHash} — ${c.subject}${refsTag}${dateTag}`;
+      selectEl.appendChild(opt);
+    }
+  };
+
+  if (isBranchMode) {
+    buildBranchOptions(elements.baseCommitSelect, 'Choose a base branch...');
+    buildBranchOptions(elements.targetCommitSelect, 'Choose a target branch...');
+  } else {
+    buildCommitOptions(elements.baseCommitSelect, 'Choose a recent base commit...');
+    buildCommitOptions(elements.targetCommitSelect, 'Choose a recent target commit...');
+  }
+
+  if (applyDefaults) {
+    if (isBranchMode) {
+      const currentBranch = state.branches.find(b => b.isCurrent)?.name;
+      const fallbackBase =
+        state.branches.find(b => !b.isRemote && (b.name === 'main' || b.name === 'master') && b.name !== currentBranch)?.name ||
+        state.branches.find(b => !b.isRemote && b.name !== currentBranch)?.name ||
+        state.branches.find(b => b.name !== currentBranch)?.name ||
+        state.branches[0]?.name ||
+        state.defaultCompareBase;
+      const fallbackTarget = currentBranch || state.branches[0]?.name || state.defaultCompareTarget;
+
+      if (!elements.baseCommitInput.value.trim() && fallbackBase) {
+        elements.baseCommitInput.value = fallbackBase;
+      }
+      if (!elements.targetCommitInput.value.trim() && fallbackTarget) {
+        elements.targetCommitInput.value = fallbackTarget;
+      }
+    } else {
+      const commitBase = state.commits[1]?.shortHash || state.commits[0]?.shortHash || state.defaultCompareBase;
+      const commitTarget = state.commits[0]?.shortHash || state.defaultCompareTarget || 'HEAD';
+      if (!elements.baseCommitInput.value.trim() && commitBase) {
+        elements.baseCommitInput.value = commitBase;
+      }
+      if (!elements.targetCommitInput.value.trim() && commitTarget) {
+        elements.targetCommitInput.value = commitTarget;
+      }
+    }
+  }
+
+  syncSelectToInput(elements.baseCommitSelect, elements.baseCommitInput.value);
+  syncSelectToInput(elements.targetCommitSelect, elements.targetCommitInput.value);
 }
 
 function showLoading(msg: string) {

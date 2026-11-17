@@ -3,7 +3,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ChangedFile, ChangeStatus, DiffScope, GitRepoInfo } from './types';
+import { ChangedFile, ChangeStatus, CommitRef, DiffScope, GitBranchInfo, GitRepoInfo } from './types';
 
 const execFileAsync = promisify(execFile);
 
@@ -329,5 +329,174 @@ export class GitService {
       // ignore
     }
     return undefined;
+  }
+
+  private parseCommitLogLines(output: string): CommitRef[] {
+    const commits: CommitRef[] = [];
+    for (const line of output.split('\n')) {
+      const trimmed = line.replace(/\r$/, '');
+      if (!trimmed) continue;
+      const [hash, shortHash, subject, author, date, refs] = trimmed.split('\0');
+      if (!hash || !/^[0-9a-f]{40,64}$/i.test(hash.trim())) {
+        continue;
+      }
+      commits.push({
+        hash: hash.trim(),
+        shortHash: (shortHash || hash.slice(0, 7)).trim(),
+        subject: (subject || '(no subject)').trim(),
+        author: author?.trim() || undefined,
+        date: date?.trim() || undefined,
+        refs: refs?.trim() || undefined,
+      });
+    }
+    return commits;
+  }
+
+  private isSafeGitRef(ref: string): boolean {
+    const trimmed = ref.trim();
+    return trimmed.length > 0 && !trimmed.startsWith('-') && !/[\0\r\n]/.test(trimmed);
+  }
+
+  public async getCommits(repoPath: string, limit: number = 100): Promise<CommitRef[]> {
+    const safeLimit = Math.max(1, Math.min(limit, 500));
+    const format = '%H%x00%h%x00%s%x00%an%x00%ar%x00%D';
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['log', '--all', '--date-order', `-n`, `${safeLimit}`, `--pretty=format:${format}`],
+        { cwd: repoPath, maxBuffer: 5 * 1024 * 1024 }
+      );
+      return this.parseCommitLogLines(stdout);
+    } catch {
+      return [];
+    }
+  }
+
+  public async getBranches(repoPath: string): Promise<GitBranchInfo[]> {
+    const format = '%(refname)%00%(refname:short)%00%(objectname)%00%(objectname:short)%00%(subject)%00%(committerdate:relative)%00%(HEAD)%00%(symref)';
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['for-each-ref', '--sort=-committerdate', `--format=${format}`, 'refs/heads', 'refs/remotes'],
+        { cwd: repoPath, maxBuffer: 2 * 1024 * 1024 }
+      );
+      const branches: GitBranchInfo[] = [];
+      for (const line of stdout.split('\n')) {
+        const trimmed = line.replace(/\r$/, '');
+        if (!trimmed) continue;
+        const [refname, shortName, hash, shortHash, subject, date, headFlag, symref] = trimmed.split('\0');
+        if (!shortName || !hash || !/^[0-9a-f]{40,64}$/i.test(hash.trim())) {
+          continue;
+        }
+        if (symref?.trim() || refname?.endsWith('/HEAD')) {
+          continue;
+        }
+        branches.push({
+          name: shortName.trim(),
+          hash: hash.trim(),
+          shortHash: (shortHash || hash.slice(0, 7)).trim(),
+          subject: (subject || '(no subject)').trim(),
+          isRemote: (refname || '').startsWith('refs/remotes/'),
+          isCurrent: headFlag?.trim() === '*',
+          date: date?.trim() || undefined,
+        });
+      }
+
+      branches.sort((a, b) => {
+        if (a.isRemote !== b.isRemote) return a.isRemote ? 1 : -1;
+        if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
+        return 0;
+      });
+      return branches;
+    } catch {
+      return [];
+    }
+  }
+
+  public async resolveCommit(repoPath: string, ref: string): Promise<CommitRef | null> {
+    const trimmed = ref.trim();
+    if (!this.isSafeGitRef(trimmed)) {
+      return null;
+    }
+
+    try {
+      const { stdout: shaOut } = await execFileAsync(
+        'git',
+        ['rev-parse', '--verify', `${trimmed}^{commit}`],
+        { cwd: repoPath }
+      );
+      const sha = shaOut.trim();
+      if (!/^[0-9a-f]{40,64}$/i.test(sha)) {
+        return null;
+      }
+
+      const format = '%H%x00%h%x00%s%x00%an%x00%ar%x00%D';
+      const { stdout: showOut } = await execFileAsync(
+        'git',
+        ['show', '-s', `--format=${format}`, sha],
+        { cwd: repoPath }
+      );
+      const parsed = this.parseCommitLogLines(showOut);
+      const resolvedLabel = !sha.toLowerCase().startsWith(trimmed.toLowerCase()) ? trimmed : undefined;
+      if (parsed[0]) {
+        return {
+          ...parsed[0],
+          ...(resolvedLabel ? { label: resolvedLabel } : {}),
+        };
+      }
+      return {
+        hash: sha,
+        shortHash: sha.slice(0, 7),
+        subject: trimmed,
+        ...(resolvedLabel ? { label: resolvedLabel } : {}),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  public async getCommitDiff(
+    repoPath: string,
+    baseRef: string,
+    targetRef: string,
+    filePath?: string
+  ): Promise<string> {
+    if (!this.isSafeGitRef(baseRef) || !this.isSafeGitRef(targetRef)) {
+      throw new Error('Invalid git commit reference.');
+    }
+
+    const args = ['diff', '--no-color', '-U3', baseRef.trim(), targetRef.trim(), '--'];
+    if (filePath) {
+      args.push(filePath);
+    }
+
+    const { stdout } = await execFileAsync('git', args, {
+      cwd: repoPath,
+      maxBuffer: 15 * 1024 * 1024,
+    });
+    return stdout;
+  }
+
+  public async getCommitsInRange(
+    repoPath: string,
+    baseHash: string,
+    targetHash: string,
+    limit: number = 15
+  ): Promise<CommitRef[]> {
+    if (!this.isSafeGitRef(baseHash) || !this.isSafeGitRef(targetHash)) {
+      return [];
+    }
+    const safeLimit = Math.max(1, Math.min(limit, 50));
+    const format = '%H%x00%h%x00%s%x00%an%x00%ar%x00%D';
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['log', '--no-merges', `-n`, `${safeLimit}`, `--pretty=format:${format}`, `${baseHash.trim()}..${targetHash.trim()}`],
+        { cwd: repoPath, maxBuffer: 2 * 1024 * 1024 }
+      );
+      return this.parseCommitLogLines(stdout);
+    } catch {
+      return [];
+    }
   }
 }

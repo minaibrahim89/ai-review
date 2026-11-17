@@ -15,7 +15,32 @@ export interface GitRepoInfo {
   headBranch?: string;
 }
 
-export type DiffScope = 'all' | 'staged' | 'unstaged';
+export type DiffScope = 'all' | 'staged' | 'unstaged' | 'commits';
+
+export interface CommitRef {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  label?: string;
+  author?: string;
+  date?: string;
+  refs?: string;
+}
+
+export interface GitBranchInfo {
+  name: string;
+  hash: string;
+  shortHash: string;
+  subject: string;
+  isRemote: boolean;
+  isCurrent: boolean;
+  date?: string;
+}
+
+export interface CommitComparison {
+  base: CommitRef;
+  target: CommitRef;
+}
 
 export interface WorkspaceGitState {
   repos: GitRepoInfo[];
@@ -23,4 +48,5 @@ export interface WorkspaceGitState {
   branchName?: string;
   files: ChangedFile[];
   scope: DiffScope;
+  comparison?: CommitComparison;
 }

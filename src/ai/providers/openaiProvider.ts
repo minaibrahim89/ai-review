@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { DiffFile } from '../../diff/types';
-import { AIProvider, Chapter, ReviewContext, StoryNarrative, resolveSeverityLevel } from '../types';
+import { AIProvider, Chapter, ReviewContext, StoryNarrative } from '../types';
 import { OrderingEngine } from '../orderingEngine';
+import { formatDiffsForPrompt, parseProviderStoryResponse } from './responseParser';
 
 export class OpenAIProvider implements AIProvider {
   public readonly id: string;
@@ -51,24 +52,19 @@ export class OpenAIProvider implements AIProvider {
     const apiKey = await this.getApiKey() || (this.isOllama ? 'ollama' : '');
 
     const orderedNodes = OrderingEngine.orderFiles(files);
-    const diffSummaries = orderedNodes.map((n, idx) => {
-      const f = n.file;
-      const hunksText = f.hunks.map(h => {
-        return h.lines.map(l => {
-          const prefix = l.type === 'add' ? '+' : l.type === 'delete' ? '-' : ' ';
-          return `${prefix}${l.content}`;
-        }).slice(0, 100).join('\n');
-      }).join('\n');
-
-      return `--- File ${idx + 1}: ${f.newPath || f.oldPath} (${n.role}, ${f.status}) ---
-${hunksText}`;
-    }).join('\n\n');
+    const diffSummaries = formatDiffsForPrompt(orderedNodes);
 
     const intentionBlock = ctx.intention?.promptContext ? `\n\n${ctx.intention.promptContext}` : '';
     const repoDefensesBlock = ctx.repoDefenses?.promptContext ? `\n\n${ctx.repoDefenses.promptContext}` : '';
 
+    const baseDesc = ctx.comparison?.base.label ? `${ctx.comparison.base.label} (${ctx.comparison.base.shortHash})` : ctx.comparison?.base.shortHash;
+    const targetDesc = ctx.comparison?.target.label ? `${ctx.comparison.target.label} (${ctx.comparison.target.shortHash})` : ctx.comparison?.target.shortHash;
+    const targetLabel = ctx.comparison
+      ? `comparison ${baseDesc} ("${ctx.comparison.base.subject}") -> ${targetDesc} ("${ctx.comparison.target.subject}")`
+      : `uncommitted Git changes`;
+
     const prompt = `You are a principal engineer conducting a structured code review walkthrough.
-Organize these uncommitted Git changes into an optimal, logical review sequence (data contracts/schemas first, then business logic, then API endpoints, UI, and tests/config).
+Organize these Git changes (${targetLabel}) into an optimal, logical review sequence (data contracts/schemas first, then business logic, then API endpoints, UI, and tests/config).
 
 CRITICAL INSTRUCTIONS:
 1. Do NOT write fiction, novel-like prose, or dramatized story text.
@@ -110,70 +106,69 @@ ${intentionBlock}
 ${repoDefensesBlock}
 
 Repository: ${ctx.repoName}
-Branch: ${ctx.branch || 'main'}
+${ctx.comparison ? `Comparison: ${ctx.comparison.base.shortHash} -> ${ctx.comparison.target.shortHash}` : `Branch: ${ctx.branch || 'main'}`}
 Diffs:
 ${diffSummaries}`;
 
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-      }),
-    });
+    let useJsonMode = !this.isOllama;
+    let lastError: Error | undefined;
 
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`OpenAI API error (${res.status}): ${err}`);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const body: Record<string, unknown> = {
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+        };
+        if (useJsonMode) {
+          body.response_format = { type: 'json_object' };
+        }
+
+        const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+          ? AbortSignal.timeout(60000)
+          : undefined;
+        const res = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal,
+        });
+
+        if (!res.ok) {
+          const err = await res.text();
+          // Some OpenAI-compatible endpoints reject response_format: json_object with HTTP 400
+          if (res.status === 400 && useJsonMode && /response_format|json_object/i.test(err)) {
+            useJsonMode = false;
+            continue;
+          }
+          lastError = new Error(`OpenAI API error (${res.status}): ${err}`);
+          if ((res.status === 429 || res.status >= 500) && attempt === 0) {
+            if (typeof setTimeout === 'function') {
+              await new Promise(resolve => setTimeout(resolve, 800));
+            }
+            continue;
+          }
+          throw lastError;
+        }
+
+        const data: any = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) throw new Error('Empty response from AI endpoint.');
+
+        return parseProviderStoryResponse(content, files, ctx, 'Review Walkthrough');
+      } catch (err: any) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt === 0 && (err instanceof SyntaxError || /empty response|valid JSON/i.test(lastError.message))) {
+          continue;
+        }
+        throw lastError;
+      }
     }
 
-    const data: any = await res.json();
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Empty response from AI endpoint.');
-
-    const parsed = JSON.parse(content);
-    const fileLookup = new Map(files.map(f => [f.newPath || f.oldPath, f]));
-
-    const chapters: Chapter[] = (parsed.chapters || []).map((ch: any, i: number) => {
-      const diffFile = fileLookup.get(ch.filePath) || files[i];
-      return {
-        index: i + 1,
-        filePath: ch.filePath || (diffFile ? (diffFile.newPath || diffFile.oldPath) : `File ${i + 1}`),
-        title: ch.title || `Chapter ${i + 1}`,
-        role: ch.role || 'Code Module',
-        summary: ch.summary || '',
-        narrative: ch.narrative || '',
-        keyPoints: ch.keyPoints || [],
-        issues: (ch.issues || []).map((iss: any, j: number) => ({
-          id: iss.id || `issue-${i}-${j}`,
-          severity: iss.severity || 'warning',
-          severityLevel: resolveSeverityLevel(iss),
-          title: iss.title || 'Potential Issue',
-          description: iss.description || '',
-          lineNumber: typeof iss.lineNumber === 'number' ? iss.lineNumber : undefined,
-          suggestion: iss.suggestion,
-        })),
-        isReviewed: false,
-        diffFile,
-      };
-    });
-
-    return {
-      title: parsed.title || 'Review Walkthrough',
-      synopsis: parsed.synopsis || '',
-      suggestedCommitMessage: parsed.suggestedCommitMessage || 'feat: update changes',
-      chapters,
-      intentionContext: ctx.intention && ctx.intention.sources.length > 0 ? {
-        summary: ctx.intention.summary,
-        sources: ctx.intention.sources.map(s => s.title),
-      } : undefined,
-    };
+    throw lastError || new Error('OpenAI-compatible request failed.');
   }
 
   public async askQuestion(question: string, chapter: Chapter, diffSnippet: string): Promise<string> {

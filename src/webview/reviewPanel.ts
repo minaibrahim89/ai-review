@@ -1,13 +1,20 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
 import { GitService } from '../git/gitService';
 import { StoryAgent } from '../ai/storyAgent';
 import { DiffParser } from '../diff/diffParser';
-import { DiffScope, GitRepoInfo } from '../git/types';
+import { CommitComparison, CommitRef, DiffScope, GitRepoInfo } from '../git/types';
 import { ExtensionMessageToWebview, WebviewMessageToExtension } from './types';
 import { Chapter, StoryNarrative } from '../ai/types';
-import { buildCopilotPrompt, CopilotIssueInfo } from './copilotPrompt';
+import {
+  addressIssueWithCopilot,
+  buildCommitsListPayload,
+  buildWebviewHtml,
+  formatRefShort,
+  loadComparisonExtras,
+  openChapterFileInEditor,
+  openNativeDiffEditor,
+  resolveAndValidateComparison,
+} from './reviewHelper';
 
 export class ReviewPanel {
   public static currentPanel: ReviewPanel | undefined;
@@ -23,6 +30,7 @@ export class ReviewPanel {
   private currentRepo?: GitRepoInfo;
   private repos: GitRepoInfo[] = [];
   private currentScope: DiffScope = 'all';
+  private currentComparison?: CommitComparison;
   private currentStory?: StoryNarrative;
   private currentChapterIndex: number = 0;
   private currentProviderName: string = 'Heuristic';
@@ -98,6 +106,9 @@ export class ReviewPanel {
       }
       case 'changeScope': {
         this.currentScope = message.scope;
+        if (message.scope !== 'commits') {
+          this.currentComparison = undefined;
+        }
         this.currentChapterIndex = 0;
         await this.loadStory();
         break;
@@ -106,6 +117,30 @@ export class ReviewPanel {
         const found = this.repos.find(r => r.rootUri === message.repoUri);
         if (found) {
           this.currentRepo = found;
+          this.currentComparison = undefined;
+          if (this.currentScope === 'commits') {
+            this.currentScope = 'all';
+          }
+          this.currentChapterIndex = 0;
+          await this.loadStory();
+        }
+        break;
+      }
+      case 'requestCommits': {
+        await this.sendCommitsList();
+        break;
+      }
+      case 'compareCommits': {
+        await this.handleCompareCommitsRefs(message.baseRef, message.targetRef);
+        break;
+      }
+      case 'swapCompareCommits': {
+        if (this.currentComparison) {
+          this.currentComparison = {
+            base: this.currentComparison.target,
+            target: this.currentComparison.base,
+          };
+          this.currentScope = 'commits';
           this.currentChapterIndex = 0;
           await this.loadStory();
         }
@@ -171,16 +206,15 @@ export class ReviewPanel {
       }
       case 'openFileInEditor': {
         if (this.currentRepo) {
-          const fullPath = path.join(this.currentRepo.rootUri, message.filePath);
-          try {
-            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(fullPath));
-            await vscode.window.showTextDocument(doc, {
-              viewColumn: vscode.ViewColumn.One,
-              selection: message.line ? new vscode.Range(message.line - 1, 0, message.line - 1, 0) : undefined,
-            });
-          } catch (err: any) {
-            vscode.window.showErrorMessage(`Could not open file: ${err.message}`);
-          }
+          const chapter = this.currentStory?.chapters[this.currentChapterIndex];
+          await openChapterFileInEditor(
+            this.currentRepo.rootUri,
+            message.filePath,
+            this.currentScope,
+            this.currentComparison,
+            chapter,
+            message.line
+          );
         }
         break;
       }
@@ -196,54 +230,8 @@ export class ReviewPanel {
         break;
       }
       case 'addressWithCopilot': {
-        await this.handleAddressWithCopilot(message.filePath, message.issue);
+        await addressIssueWithCopilot(this.currentRepo?.rootUri, message.filePath, message.issue);
         break;
-      }
-    }
-  }
-
-  private async handleAddressWithCopilot(filePath: string, issue: CopilotIssueInfo) {
-    if (this.currentRepo) {
-      const fullPath = path.join(this.currentRepo.rootUri, filePath);
-      try {
-        if (fs.existsSync(fullPath)) {
-          const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(fullPath));
-          const line = issue.lineNumber && issue.lineNumber > 0 ? issue.lineNumber - 1 : 0;
-          await vscode.window.showTextDocument(doc, {
-            viewColumn: vscode.ViewColumn.One,
-            preserveFocus: false,
-            selection: new vscode.Range(line, 0, line, 0),
-          });
-        }
-      } catch (err: any) {
-        console.warn(`Could not open file ${filePath} for Copilot:`, err);
-      }
-    }
-
-    const query = buildCopilotPrompt(filePath, issue);
-
-    try {
-      const commands = await vscode.commands.getCommands(true);
-      if (commands.includes('workbench.action.chat.open')) {
-        await vscode.commands.executeCommand('workbench.action.chat.open', { query });
-      } else if (commands.includes('workbench.action.quickchat.open')) {
-        await vscode.commands.executeCommand('workbench.action.quickchat.open', { query });
-      } else {
-        await vscode.env.clipboard.writeText(query);
-        vscode.window.showInformationMessage(
-          'GitHub Copilot Chat is not active. The review prompt has been copied to your clipboard.',
-          'OK'
-        );
-      }
-    } catch (err: any) {
-      try {
-        await vscode.env.clipboard.writeText(query);
-        vscode.window.showInformationMessage(
-          `Could not open Copilot Chat (${err.message}). The prompt has been copied to your clipboard.`,
-          'OK'
-        );
-      } catch (clipErr) {
-        vscode.window.showErrorMessage(`Failed to address with Copilot: ${err.message}`);
       }
     }
   }
@@ -255,56 +243,92 @@ export class ReviewPanel {
     });
   }
 
+  public async compareCommits(
+    base: CommitRef,
+    target: CommitRef,
+    repo?: GitRepoInfo
+  ): Promise<void> {
+    if (repo) {
+      this.currentRepo = repo;
+    } else if (!this.currentRepo) {
+      this.repos = await this.gitService.getRepositories();
+      this.currentRepo = this.repos[0];
+    }
+    this.currentScope = 'commits';
+    this.currentComparison = { base, target };
+    this.currentChapterIndex = 0;
+    await this.loadStory();
+  }
+
+  private async sendCommitsList(): Promise<void> {
+    if (!this.currentRepo) {
+      this.repos = await this.gitService.getRepositories();
+      this.currentRepo = this.repos[0];
+    }
+    if (!this.currentRepo) {
+      this.postMessage({
+        type: 'commitsList',
+        payload: { commits: [], branches: [] },
+      });
+      return;
+    }
+
+    const payload = await buildCommitsListPayload(
+      this.gitService,
+      this.currentRepo.rootUri,
+      this.currentRepo.headBranch,
+      this.currentComparison
+    );
+    this.postMessage({
+      type: 'commitsList',
+      payload,
+    });
+  }
+
+  private async handleCompareCommitsRefs(baseRef: string, targetRef: string): Promise<void> {
+    if (!this.currentRepo) {
+      this.postMessage({
+        type: 'compareError',
+        payload: { message: 'No active Git repository selected.' },
+      });
+      return;
+    }
+
+    const result = await resolveAndValidateComparison(
+      this.gitService,
+      this.currentRepo.rootUri,
+      baseRef,
+      targetRef
+    );
+
+    if (!result.comparison) {
+      this.postMessage({
+        type: 'compareError',
+        payload: {
+          message: result.error || 'Could not resolve one or both commit references.',
+          invalidField: result.invalidField,
+        },
+      });
+      return;
+    }
+
+    this.currentScope = 'commits';
+    this.currentComparison = result.comparison;
+    this.currentChapterIndex = 0;
+    await this.loadStory();
+  }
+
   public async openNativeDiff(chapter?: Chapter, lineNumber?: number): Promise<void> {
     const ch = chapter || this.currentStory?.chapters[this.currentChapterIndex];
     if (!this.currentRepo || !ch) return;
 
-    const repoRoot = this.currentRepo.rootUri;
-    const relativePath = ch.filePath;
-    const status = ch.diffFile?.status || 'modified';
-    const fileName = path.basename(relativePath);
-
-    let leftUri: vscode.Uri;
-    let rightUri: vscode.Uri;
-    let title: string;
-
-    if (status === 'added' || status === 'untracked') {
-      leftUri = vscode.Uri.parse(`git-story-diff:/${relativePath}?empty=true`);
-      rightUri = vscode.Uri.file(path.join(repoRoot, relativePath));
-      title = `${fileName} (Added ↔ Working Tree)`;
-    } else if (status === 'deleted') {
-      leftUri = vscode.Uri.parse(`git-story-diff:/${relativePath}?repo=${encodeURIComponent(repoRoot)}&ref=HEAD`);
-      rightUri = vscode.Uri.parse(`git-story-diff:/${relativePath}?empty=true`);
-      title = `${fileName} (HEAD ↔ Deleted)`;
-    } else if (this.currentScope === 'staged') {
-      leftUri = vscode.Uri.parse(`git-story-diff:/${relativePath}?repo=${encodeURIComponent(repoRoot)}&ref=HEAD`);
-      rightUri = vscode.Uri.parse(`git-story-diff:/${relativePath}?repo=${encodeURIComponent(repoRoot)}&ref=index`);
-      title = `${fileName} (HEAD ↔ Staged)`;
-    } else if (this.currentScope === 'unstaged') {
-      leftUri = vscode.Uri.parse(`git-story-diff:/${relativePath}?repo=${encodeURIComponent(repoRoot)}&ref=index`);
-      rightUri = vscode.Uri.file(path.join(repoRoot, relativePath));
-      title = `${fileName} (Index ↔ Working Tree)`;
-    } else {
-      leftUri = vscode.Uri.parse(`git-story-diff:/${relativePath}?repo=${encodeURIComponent(repoRoot)}&ref=HEAD`);
-      rightUri = vscode.Uri.file(path.join(repoRoot, relativePath));
-      title = `${fileName} (HEAD ↔ Working Tree)`;
-    }
-
-    try {
-      await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, title, {
-        preview: true,
-        preserveFocus: true,
-        viewColumn: vscode.ViewColumn.One,
-        selection: lineNumber ? new vscode.Range(lineNumber - 1, 0, lineNumber - 1, 0) : undefined,
-      });
-
-      if (lineNumber && vscode.window.activeTextEditor) {
-        const range = new vscode.Range(lineNumber - 1, 0, lineNumber - 1, 0);
-        vscode.window.activeTextEditor.revealRange(range, vscode.TextEditorRevealType.InCenter);
-      }
-    } catch (err: any) {
-      console.error('Failed to open native diff editor:', err);
-    }
+    await openNativeDiffEditor(
+      this.currentRepo.rootUri,
+      ch,
+      this.currentScope,
+      this.currentComparison,
+      lineNumber
+    );
   }
 
   private async loadInitialData() {
@@ -331,7 +355,9 @@ export class ReviewPanel {
       return;
     }
 
-    this.currentRepo = this.repos[0];
+    if (!this.currentRepo || !this.repos.some(r => r.rootUri === this.currentRepo?.rootUri)) {
+      this.currentRepo = this.repos[0];
+    }
     await this.loadStory();
   }
 
@@ -346,20 +372,59 @@ export class ReviewPanel {
 
   private async loadStory(forceRefresh = false) {
     if (!this.currentRepo) return;
+    const currentRepo = this.currentRepo;
 
-    this.postMessage({ type: 'loading', payload: { message: 'Cross-checking repository defenses & commit intentions...' } });
+    if (this.currentScope === 'commits' && !this.currentComparison) {
+      this.currentStory = {
+        title: 'Select Two Commits to Compare',
+        synopsis: 'Choose a base commit and a target commit to compare their states.',
+        chapters: [],
+        suggestedCommitMessage: '',
+      };
+      this.postMessage({
+        type: 'init',
+        payload: {
+          story: this.currentStory,
+          providerName: 'Git Story',
+          currentRepo: this.currentRepo,
+          repos: this.repos,
+          scope: this.currentScope,
+          themeStyle: vscode.workspace.getConfiguration('gitStory').get<string>('themeStyle') || 'zen',
+        },
+      });
+      return;
+    }
+
+    this.postMessage({
+      type: 'loading',
+      payload: {
+        message: this.currentScope === 'commits' && this.currentComparison
+          ? `Comparing ${formatRefShort(this.currentComparison.base)} ↔ ${formatRefShort(this.currentComparison.target)}...`
+          : 'Cross-checking repository defenses & commit intentions...',
+      },
+    });
 
     try {
-      const rawDiff = await this.gitService.getDiff(this.currentRepo.rootUri, undefined, this.currentScope);
+      const comparison = this.currentScope === 'commits' ? this.currentComparison : undefined;
+      const rawDiff = comparison
+        ? await this.gitService.getCommitDiff(currentRepo.rootUri, comparison.base.hash, comparison.target.hash)
+        : await this.gitService.getDiff(currentRepo.rootUri, undefined, this.currentScope);
       const diffFiles = DiffParser.parse(rawDiff);
 
       if (diffFiles.length === 0) {
-        this.currentStory = {
-          title: 'Working Tree Clean',
-          synopsis: 'No uncommitted changes found in the working tree for the selected scope.',
-          chapters: [],
-          suggestedCommitMessage: '',
-        };
+        this.currentStory = comparison
+          ? {
+              title: 'No Differences Between Commits',
+              synopsis: `No file differences found between ${comparison.base.shortHash} ("${comparison.base.subject}") and ${comparison.target.shortHash} ("${comparison.target.subject}").`,
+              chapters: [],
+              suggestedCommitMessage: '',
+            }
+          : {
+              title: 'Working Tree Clean',
+              synopsis: 'No uncommitted changes found in the working tree for the selected scope.',
+              chapters: [],
+              suggestedCommitMessage: '',
+            };
         this.postMessage({
           type: 'init',
           payload: {
@@ -368,46 +433,65 @@ export class ReviewPanel {
             currentRepo: this.currentRepo,
             repos: this.repos,
             scope: this.currentScope,
+            comparison,
             themeStyle: vscode.workspace.getConfiguration('gitStory').get<string>('themeStyle') || 'zen',
           }
         });
         return;
       }
 
-      const { story, providerName } = await this.storyAgent.generateStory(diffFiles, {
-        repoName: this.currentRepo.name,
-        repoRoot: this.currentRepo.rootUri,
-        branch: this.currentRepo.headBranch,
-      }, forceRefresh);
-
-      // Preserve previously reviewed checkmarks if the file paths match
-      if (this.currentStory?.chapters) {
-        for (const ch of story.chapters) {
-          const old = this.currentStory.chapters.find(o => o.filePath === ch.filePath);
-          if (old?.isReviewed) {
-            ch.isReviewed = true;
+      let initialized = false;
+      const publishStory = (story: StoryNarrative, providerName: string) => {
+        const reviewedPaths = new Set(
+          (this.currentStory?.chapters || []).filter(chapter => chapter.isReviewed).map(chapter => chapter.filePath)
+        );
+        for (const chapter of story.chapters) {
+          if (reviewedPaths.has(chapter.filePath)) {
+            chapter.isReviewed = true;
           }
         }
-      }
 
-      this.currentStory = story;
-      this.currentProviderName = providerName;
-      this.currentChapterIndex = 0;
-
-      this.postMessage({
-        type: 'init',
-        payload: {
-          story: this.currentStory,
-          providerName: this.currentProviderName,
-          currentRepo: this.currentRepo,
-          repos: this.repos,
-          scope: this.currentScope,
-          themeStyle: vscode.workspace.getConfiguration('gitStory').get<string>('themeStyle') || 'zen',
+        this.currentStory = story;
+        this.currentProviderName = providerName;
+        if (!initialized) {
+          initialized = true;
+          this.currentChapterIndex = 0;
+          this.postMessage({
+            type: 'init',
+            payload: {
+              story,
+              providerName,
+              currentRepo,
+              repos: this.repos,
+              scope: this.currentScope,
+              comparison,
+              themeStyle: vscode.workspace.getConfiguration('gitStory').get<string>('themeStyle') || 'zen',
+            }
+          });
+        } else {
+          this.postMessage({
+            type: 'updateStory',
+            payload: { story, providerName, scope: this.currentScope, comparison },
+          });
         }
-      });
+      };
 
-      if (this.currentStory.chapters.length > 0) {
-        await this.openNativeDiff(this.currentStory.chapters[0]);
+      const extras = comparison
+        ? await loadComparisonExtras(this.gitService, currentRepo.rootUri, diffFiles, comparison)
+        : undefined;
+
+      const { story, providerName } = await this.storyAgent.generateStory(diffFiles, {
+        repoName: currentRepo.name,
+        repoRoot: currentRepo.rootUri,
+        branch: currentRepo.headBranch,
+        comparison,
+        comparisonCommits: extras?.comparisonCommits,
+        targetFileContents: extras?.targetFileContents,
+      }, forceRefresh, progressStory => publishStory(progressStory, 'AI Review (analyzing)'));
+      publishStory(story, providerName);
+
+      if (story.chapters.length > 0) {
+        await this.openNativeDiff(story.chapters[0]);
       }
     } catch (err: any) {
       this.postMessage({
@@ -467,27 +551,7 @@ export class ReviewPanel {
   }
 
   private updateWebviewContent() {
-    const webview = this.panel.webview;
-    const webviewDir = path.join(this.extensionUri.fsPath, 'dist', 'webview');
-    const htmlPath = path.join(webviewDir, 'index.html');
-
-    if (!fs.existsSync(htmlPath)) {
-      webview.html = `<html><body><h3>Building Git Story webview... Please run compile.</h3></body></html>`;
-      return;
-    }
-
-    let html = fs.readFileSync(htmlPath, 'utf8');
-
-    const appJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'app.js'));
-    const stylesCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'styles.css'));
-
-    html = html.replace('href="styles.css"', `href="${stylesCssUri}"`);
-    html = html.replace('src="app.js"', `src="${appJsUri}"`);
-
-    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource};">`;
-    html = html.replace('<head>', `<head>\n  ${csp}`);
-
-    webview.html = html;
+    this.panel.webview.html = buildWebviewHtml(this.panel.webview, this.extensionUri);
   }
 
   public dispose() {

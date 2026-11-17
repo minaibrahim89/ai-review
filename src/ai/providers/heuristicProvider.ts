@@ -19,7 +19,10 @@ export class HeuristicProvider implements AIProvider {
 
     // Build overall synopsis
     const fileCount = files.length;
-    let synopsis = `This changeset in **${context.repoName}** (${context.branch || 'current branch'}) modifies ${fileCount} file${fileCount > 1 ? 's' : ''} with **+${totalAdditions} additions** and **-${totalDeletions} deletions**.\n\n` +
+    const scopeSummary = context.comparison
+      ? `Comparing \`${context.comparison.base.label ? `${context.comparison.base.label} (${context.comparison.base.shortHash})` : context.comparison.base.shortHash}\` ("${context.comparison.base.subject}") → \`${context.comparison.target.label ? `${context.comparison.target.label} (${context.comparison.target.shortHash})` : context.comparison.target.shortHash}\` ("${context.comparison.target.subject}") in **${context.repoName}**`
+      : `This changeset in **${context.repoName}** (${context.branch || 'current branch'})`;
+    let synopsis = `${scopeSummary} modifies ${fileCount} file${fileCount > 1 ? 's' : ''} with **+${totalAdditions} additions** and **-${totalDeletions} deletions**.\n\n` +
       `The changes are organized in a logical review sequence: starting with foundational schemas and contracts, progressing through core business logic and API endpoints, and concluding with UI views and verification tests.`;
 
     if (context.intention?.summary) {
@@ -35,7 +38,7 @@ export class HeuristicProvider implements AIProvider {
       const basename = path.basename(filePath);
 
       // Analyze issues using static code smell rules, cross-checking against repo
-      const issues = this.detectStaticIssues(file, context.repoRoot);
+      const issues = this.detectStaticIssues(file, context.repoRoot, context.targetFileContents);
 
       // Construct technical explanation for this review step
       let narrative = `\`${basename}\` serves as the **${node.role}** for this changeset. `;
@@ -104,7 +107,7 @@ export class HeuristicProvider implements AIProvider {
     return `Heuristic analysis: \`${chapter.filePath}\` (${chapter.role}) has \`+${chapter.diffFile?.additions || 0}\` additions and \`-${chapter.diffFile?.deletions || 0}\` deletions. Configure a Gemini or VS Code LM provider in settings for deep interactive Q&A.`;
   }
 
-  private detectStaticIssues(file: DiffFile, repoRoot?: string): IssueCallout[] {
+  private detectStaticIssues(file: DiffFile, repoRoot?: string, fileContents?: Map<string, string>): IssueCallout[] {
     const rawIssues: IssueCallout[] = [];
     let issueCount = 0;
 
@@ -181,7 +184,7 @@ export class HeuristicProvider implements AIProvider {
     }
 
     // Cross-check issues against file and repository to filter out already-handled concerns
-    return RepoCrossChecker.verifyAndFilterIssues(rawIssues, file, repoRoot);
+    return RepoCrossChecker.verifyAndFilterIssues(rawIssues, file, repoRoot, undefined, fileContents);
   }
 
   private summarizeKeyPoints(file: DiffFile): string[] {

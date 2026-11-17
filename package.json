@@ -76,6 +76,18 @@
         "icon": "$(trash)"
       },
       {
+        "command": "gitStory.compareCommits",
+        "title": "Compare Any Two Commits",
+        "category": "Git Story",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "gitStory.compareBranches",
+        "title": "Compare Two Branches",
+        "category": "Git Story",
+        "icon": "$(git-branch)"
+      },
+      {
         "command": "gitStory.configureApiKey",
         "title": "Configure AI Provider & API Key",
         "category": "Git Story"
@@ -120,6 +132,16 @@
           "command": "gitStory.clearCache",
           "when": "view == gitStory.reviewView",
           "group": "navigation@4"
+        },
+        {
+          "command": "gitStory.compareCommits",
+          "when": "view == gitStory.reviewView",
+          "group": "navigation@5"
+        },
+        {
+          "command": "gitStory.compareBranches",
+          "when": "view == gitStory.reviewView",
+          "group": "navigation@6"
         }
       ],
       "commandPalette": [
@@ -131,6 +153,12 @@
         },
         {
           "command": "gitStory.openNativeDiff"
+        },
+        {
+          "command": "gitStory.compareBranches"
+        },
+        {
+          "command": "gitStory.compareCommits"
         },
         {
           "command": "gitStory.refresh"

@@ -1,4 +1,5 @@
 import { DiffFile } from '../diff/types';
+import { CommitComparison, CommitRef } from '../git/types';
 
 export type IssueSeverity = 'warning' | 'security' | 'suggestion' | 'bug' | 'perf';
 export type SeverityLevel = 'critical' | 'high' | 'medium' | 'low' | 'info';
@@ -75,6 +76,7 @@ export interface ReviewStep {
   keyPoints: string[];
   issues: IssueCallout[];
   isReviewed?: boolean;
+  isPending?: boolean;
   diffFile?: DiffFile;
 }
 
@@ -118,6 +120,9 @@ export interface ReviewContext {
   repoName: string;
   repoRoot?: string;
   branch?: string;
+  comparison?: CommitComparison;
+  comparisonCommits?: CommitRef[];
+  targetFileContents?: Map<string, string>;
   intention?: IntentionAnalysis;
   repoDefenses?: RepoDefenseAnalysis;
 }

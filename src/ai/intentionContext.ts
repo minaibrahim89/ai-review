@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { DiffFile } from '../diff/types';
+import { CommitComparison, CommitRef } from '../git/types';
 import { GitService } from '../git/gitService';
 import { IntentionAnalysis, IntentionSource } from './types';
 
@@ -50,9 +51,21 @@ export class IntentionDetector {
     repoRoot: string,
     diffFiles: DiffFile[],
     gitService?: GitService,
-    extensionContext?: vscode.ExtensionContext
+    extensionContext?: vscode.ExtensionContext,
+    comparison?: CommitComparison,
+    comparisonCommits?: CommitRef[]
   ): Promise<IntentionAnalysis> {
     const sources: IntentionSource[] = [];
+
+    if (comparison) {
+      try {
+        sources.push(...this.findCommitComparisonIntentions(comparison, comparisonCommits));
+        sources.push(...this.findDiffDocIntentions(diffFiles));
+      } catch (err) {
+        console.warn('[IntentionDetector] Error finding commit comparison intentions:', err);
+      }
+      return this.synthesizeAnalysis(sources);
+    }
 
     // 1. Check documentation files (both modified in diff and existing in repo)
     try {
@@ -91,15 +104,39 @@ export class IntentionDetector {
     return this.synthesizeAnalysis(sources);
   }
 
-  /**
-   * Scans codebase for intention-bearing documents:
-   * 1) Markdown/doc files actively modified or added in the diff.
-   * 2) Canonical spec/plan/task files in root or docs/ folder.
-   */
-  public static findDocIntentions(repoRoot: string, diffFiles: DiffFile[]): IntentionSource[] {
+  public static findCommitComparisonIntentions(
+    comparison: CommitComparison,
+    comparisonCommits?: CommitRef[]
+  ): IntentionSource[] {
+    const baseLabel = comparison.base.label ? `${comparison.base.label} (${comparison.base.shortHash})` : comparison.base.shortHash;
+    const targetLabel = comparison.target.label ? `${comparison.target.label} (${comparison.target.shortHash})` : comparison.target.shortHash;
+    const baseShort = comparison.base.label || comparison.base.shortHash;
+    const targetShort = comparison.target.label || comparison.target.shortHash;
+    const lines = [
+      `Base (From): ${baseLabel} — ${comparison.base.subject}`,
+      `Target (To): ${targetLabel} — ${comparison.target.subject}`,
+    ];
+    if (comparisonCommits && comparisonCommits.length > 0) {
+      lines.push('', 'Commits in range:');
+      for (const c of comparisonCommits.slice(0, 15)) {
+        lines.push(`• ${c.shortHash} ${c.subject}`);
+      }
+    }
+
+    return [
+      {
+        type: 'git',
+        title: `Commits ${baseShort} → ${targetShort}`,
+        excerpt: lines.join('\n').slice(0, 1500),
+        relevanceScore: 10,
+      },
+    ];
+  }
+
+  public static findDiffDocIntentions(diffFiles: DiffFile[]): IntentionSource[] {
     const sources: IntentionSource[] = [];
 
-    // A. Documentation touched in the current changeset
+    // Documentation touched in the current changeset
     for (const file of diffFiles) {
       const p = file.newPath || file.oldPath;
       const lower = p.toLowerCase();
@@ -110,7 +147,6 @@ export class IntentionDetector {
         lower.startsWith('docs/') ||
         lower.startsWith('doc/')
       ) {
-        // Collect added lines from hunks
         const addedLines = file.hunks
           .flatMap(h => h.lines)
           .filter(l => l.type === 'add')
@@ -130,6 +166,17 @@ export class IntentionDetector {
         }
       }
     }
+
+    return sources;
+  }
+
+  /**
+   * Scans codebase for intention-bearing documents:
+   * 1) Markdown/doc files actively modified or added in the diff.
+   * 2) Canonical spec/plan/task files in root or docs/ folder.
+   */
+  public static findDocIntentions(repoRoot: string, diffFiles: DiffFile[]): IntentionSource[] {
+    const sources: IntentionSource[] = this.findDiffDocIntentions(diffFiles);
 
     // B. Canonical intention & specification files in workspace
     const candidateFiles = [

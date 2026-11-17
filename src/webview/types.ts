@@ -1,4 +1,4 @@
-import { DiffScope, GitRepoInfo } from '../git/types';
+import { CommitComparison, CommitRef, DiffScope, GitBranchInfo, GitRepoInfo } from '../git/types';
 import { StoryNarrative } from '../ai/types';
 
 export type WebviewMessageToExtension =
@@ -6,6 +6,9 @@ export type WebviewMessageToExtension =
   | { type: 'refresh' }
   | { type: 'changeScope'; scope: DiffScope }
   | { type: 'changeRepo'; repoUri: string }
+  | { type: 'requestCommits' }
+  | { type: 'compareCommits'; baseRef: string; targetRef: string }
+  | { type: 'swapCompareCommits' }
   | { type: 'selectChapter'; chapterIndex: number }
   | { type: 'jumpToDiffLine'; filePath: string; lineNumber: number }
   | { type: 'openDiffEditor'; filePath: string }
@@ -39,10 +42,36 @@ export type ExtensionMessageToWebview =
         currentRepo: GitRepoInfo;
         repos: GitRepoInfo[];
         scope: DiffScope;
+        comparison?: CommitComparison;
         themeStyle: string;
       };
     }
-  | { type: 'updateStory'; payload: { story: StoryNarrative } }
+  | {
+      type: 'updateStory';
+      payload: {
+        story: StoryNarrative;
+        providerName?: string;
+        scope?: DiffScope;
+        comparison?: CommitComparison;
+      };
+    }
+  | {
+      type: 'commitsList';
+      payload: {
+        commits: CommitRef[];
+        branches?: GitBranchInfo[];
+        currentBranch?: string;
+        currentBase?: string;
+        currentTarget?: string;
+      };
+    }
+  | {
+      type: 'compareError';
+      payload: {
+        message: string;
+        invalidField?: 'base' | 'target' | 'both';
+      };
+    }
   | { type: 'setChapter'; payload: { chapterIndex: number } }
   | { type: 'answer'; payload: { question: string; answer: string; chapterIndex: number } }
   | { type: 'loading'; payload: { message: string } }

@@ -78,6 +78,14 @@ Instead of an overwhelming, alphabetical doom-scroll of diffs, Git Story acts as
 3. Walk through the changes in logical sequence in the review reader.
 4. When finished, click **Finish & Commit** to create your commit with an AI-synthesized conventional commit message!
 
+The review remains behind a blocking loading overlay until analysis is complete. Refresh reuses
+unchanged file reviews for the same provider, model, and review intention.
+
+An explicitly selected AI provider is attempted directly. If it fails, a notification explains the
+failure and the current review uses the Heuristic Offline Engine. This temporary fallback is not
+cached as an AI review: the next refresh retries the selected provider. Older cached fallback
+stories are also ignored when their provider does not match.
+
 ---
 
 ## Building a Local VSIX
