@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import { DiffFile, DiffHunk } from '../diff/types';
-import { Chapter, IssueCallout, StoryNarrative } from './types';
+import { ChangeSummary, Chapter, IssueCallout, StoryNarrative } from './types';
 
 export interface CachedChapterContent {
   filePath: string;
@@ -20,6 +20,7 @@ export interface CachedStoryNarrative {
   providerName: string;
   title: string;
   synopsis: string;
+  changeSummary?: ChangeSummary;
   suggestedCommitMessage: string;
   chapters: CachedChapterContent[];
   intentionContext?: {
@@ -169,6 +170,7 @@ export class StoryCache {
       providerName,
       title: story.title,
       synopsis: story.synopsis,
+      changeSummary: story.changeSummary,
       suggestedCommitMessage: story.suggestedCommitMessage,
       chapters: cachedChapters,
       intentionContext: story.intentionContext,

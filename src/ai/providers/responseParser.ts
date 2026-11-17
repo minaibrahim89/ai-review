@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { DiffFile } from '../../diff/types';
 import { OrderedFileNode } from '../orderingEngine';
-import { Chapter, ReviewContext, StoryNarrative, resolveSeverityLevel } from '../types';
+import { ChangeSummary, Chapter, ReviewContext, StoryNarrative, resolveSeverityLevel } from '../types';
 
 export class ReviewCancelledError extends Error {
   constructor(message: string = 'AI review generation was cancelled.') {
@@ -179,6 +179,48 @@ export function matchDiffFile(
   return undefined;
 }
 
+export function buildComparisonSummaryPromptSnippet(ctx: ReviewContext): string {
+  if (!ctx.comparison) return '';
+  const baseName = ctx.comparison.base.label
+    ? `${ctx.comparison.base.label} (${ctx.comparison.base.shortHash})`
+    : ctx.comparison.base.shortHash;
+  const targetName = ctx.comparison.target.label
+    ? `${ctx.comparison.target.label} (${ctx.comparison.target.shortHash})`
+    : ctx.comparison.target.shortHash;
+
+  return `\nBRANCH / STATE COMPARISON REQUIREMENT:\n` +
+    `You are comparing "${baseName}" -> "${targetName}". Include a top-level "changeSummary" object in your JSON response:\n` +
+    `"changeSummary": {\n` +
+    `  "purpose": "1-2 concise paragraphs explaining the overall purpose and goals of the changes between these two branches/states",\n` +
+    `  "architectureReview": "Architectural review of module boundaries, data flow, design patterns, and structural impact across the diff",\n` +
+    `  "potentialIssues": ["Cross-cutting risk, breaking change, regression, or edge case 1", "Potential issue 2"]\n` +
+    `}\n`;
+}
+
+export function synthesizeComparisonSummary(
+  synopsis: string,
+  chapters: Chapter[],
+  ctx: ReviewContext
+): ChangeSummary {
+  const baseName = ctx.comparison?.base.label || ctx.comparison?.base.shortHash || 'base';
+  const targetName = ctx.comparison?.target.label || ctx.comparison?.target.shortHash || 'target';
+  const roles = Array.from(new Set(chapters.map(c => c.role).filter(Boolean)));
+  const totalAdd = chapters.reduce((acc, c) => acc + (c.diffFile?.additions || 0), 0);
+  const totalDel = chapters.reduce((acc, c) => acc + (c.diffFile?.deletions || 0), 0);
+
+  const chapterIssues = chapters.flatMap(ch =>
+    (ch.issues || []).map(iss => `\`${ch.filePath}\`${iss.lineNumber ? `:${iss.lineNumber}` : ''} — **${iss.title}**: ${iss.description}`)
+  );
+
+  return {
+    purpose: synopsis || `Compares changes from \`${baseName}\` to \`${targetName}\` across ${chapters.length} file(s).`,
+    architectureReview: roles.length > 0
+      ? `Changes span ${chapters.length} file(s) (+${totalAdd} / -${totalDel}) across: ${roles.join(', ')}.`
+      : `Changes span ${chapters.length} file(s) (+${totalAdd} / -${totalDel}).`,
+    potentialIssues: chapterIssues.slice(0, 8),
+  };
+}
+
 export function parseProviderStoryResponse(
   rawText: string,
   files: DiffFile[],
@@ -230,9 +272,30 @@ export function parseProviderStoryResponse(
     });
   }
 
+  const synopsis = parsed.synopsis || '';
+  let changeSummary: ChangeSummary | undefined;
+  const rawSummary = parsed.changeSummary;
+  if (rawSummary && typeof rawSummary === 'object') {
+    const fallback = ctx.comparison ? synthesizeComparisonSummary(synopsis, chapters, ctx) : undefined;
+    changeSummary = {
+      purpose: typeof rawSummary.purpose === 'string' && rawSummary.purpose.trim()
+        ? rawSummary.purpose.trim()
+        : (fallback?.purpose || synopsis),
+      architectureReview: typeof rawSummary.architectureReview === 'string' && rawSummary.architectureReview.trim()
+        ? rawSummary.architectureReview.trim()
+        : (fallback?.architectureReview || ''),
+      potentialIssues: Array.isArray(rawSummary.potentialIssues)
+        ? rawSummary.potentialIssues.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
+        : (fallback?.potentialIssues || []),
+    };
+  } else if (ctx.comparison) {
+    changeSummary = synthesizeComparisonSummary(synopsis, chapters, ctx);
+  }
+
   return {
     title: parsed.title || defaultTitle,
-    synopsis: parsed.synopsis || '',
+    synopsis,
+    ...(changeSummary ? { changeSummary } : {}),
     suggestedCommitMessage: parsed.suggestedCommitMessage || 'feat: update changes',
     chapters,
     intentionContext: ctx.intention && ctx.intention.sources.length > 0 ? {

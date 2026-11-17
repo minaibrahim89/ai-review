@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { DiffFile } from '../diff/types';
 import { AIProvider, StoryNarrative } from '../ai/types';
-import { extractJsonObject, parseProviderStoryResponse } from '../ai/providers/responseParser';
+import { buildComparisonSummaryPromptSnippet, extractJsonObject, parseProviderStoryResponse } from '../ai/providers/responseParser';
 import type { StoryAgent } from '../ai/storyAgent';
 
 const nodeRequire = createRequire(__filename);
@@ -266,4 +266,56 @@ test('StoryAgent aborts without heuristic fallback or error notice when signal i
     (err: any) => err?.name === 'ReviewCancelledError'
   );
   assert.equal(notices.length, 0);
+});
+
+test('parseProviderStoryResponse parses and synthesizes branch changeSummary (purpose, architectureReview, potentialIssues)', () => {
+  const comparison = {
+    base: { hash: 'a'.repeat(40), shortHash: 'aaaaaaa', subject: 'Base', label: 'main' },
+    target: { hash: 'b'.repeat(40), shortHash: 'bbbbbbb', subject: 'Feature', label: 'feature/auth' },
+  };
+  assert.equal(buildComparisonSummaryPromptSnippet({ repoName: 'app' }), '');
+  assert.ok(buildComparisonSummaryPromptSnippet({ repoName: 'app', comparison }).includes('"changeSummary"'));
+
+  const files = [makeDiffFile('src/auth.ts')];
+  const withSummaryRaw = JSON.stringify({
+    title: 'Auth Branch',
+    synopsis: 'Adds OAuth2 login',
+    changeSummary: {
+      purpose: 'Introduces OAuth2 PKCE authentication flow.',
+      architectureReview: 'Cleanly isolates token exchange in AuthService.',
+      potentialIssues: ['Missing state parameter validation in callback handler'],
+    },
+    chapters: [{
+      filePath: 'src/auth.ts',
+      title: 'Auth Service',
+      role: 'Core Logic',
+      summary: 'Added OAuth2',
+      narrative: 'Implements PKCE.',
+      keyPoints: [],
+      issues: [],
+    }],
+  });
+
+  const parsedWith = parseProviderStoryResponse(withSummaryRaw, files, { repoName: 'app', comparison });
+  assert.equal(parsedWith.changeSummary?.purpose, 'Introduces OAuth2 PKCE authentication flow.');
+  assert.equal(parsedWith.changeSummary?.architectureReview, 'Cleanly isolates token exchange in AuthService.');
+  assert.deepEqual(parsedWith.changeSummary?.potentialIssues, ['Missing state parameter validation in callback handler']);
+
+  const withoutSummaryRaw = JSON.stringify({
+    title: 'Auth Branch',
+    synopsis: 'Adds OAuth2 login',
+    chapters: [{
+      filePath: 'src/auth.ts',
+      title: 'Auth Service',
+      role: 'Core Logic',
+      summary: 'Added OAuth2',
+      narrative: 'Implements PKCE.',
+      keyPoints: [],
+      issues: [{ severity: 'security', title: 'Missing CSRF state check', description: 'Validate state param', lineNumber: 12 }],
+    }],
+  });
+  const synthesized = parseProviderStoryResponse(withoutSummaryRaw, files, { repoName: 'app', comparison });
+  assert.ok(synthesized.changeSummary?.purpose.includes('OAuth2'));
+  assert.ok(synthesized.changeSummary?.architectureReview.includes('Core Logic'));
+  assert.ok(synthesized.changeSummary?.potentialIssues[0].includes('Missing CSRF state check'));
 });

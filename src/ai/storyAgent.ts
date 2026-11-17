@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DiffFile } from '../diff/types';
-import { AIProvider, Chapter, ReviewContext, StoryNarrative, resolveSeverityLevel } from './types';
+import { AIProvider, ChangeSummary, Chapter, ReviewContext, StoryNarrative, resolveSeverityLevel } from './types';
 import { HeuristicProvider } from './providers/heuristicProvider';
 import { GeminiProvider } from './providers/geminiProvider';
 import { VSCodeLMProvider } from './providers/vscodeLmProvider';
@@ -10,7 +10,7 @@ import { computeChangesetHash, computeFileDiffHash, computeFileReviewCacheHash, 
 import { OrderedFileNode, OrderingEngine } from './orderingEngine';
 import { IntentionDetector } from './intentionContext';
 import { RepoCrossChecker } from './repoCrossCheck';
-import { isCancellationError, ReviewCancelledError, throwIfCancelled } from './providers/responseParser';
+import { isCancellationError, ReviewCancelledError, synthesizeComparisonSummary, throwIfCancelled } from './providers/responseParser';
 
 export class StoryAgent {
   private heuristicProvider: HeuristicProvider;
@@ -119,8 +119,30 @@ export class StoryAgent {
     let mergedTitle = '';
     let mergedSynopsis = '';
     let mergedCommitMessage = '';
+    let mergedChangeSummary: ChangeSummary | undefined;
     let intentionContext: StoryNarrative['intentionContext'];
     const collectedChapters: Chapter[] = [];
+
+    const mergeChangeSummary = (incoming?: ChangeSummary) => {
+      if (!incoming) return;
+      if (!mergedChangeSummary) {
+        mergedChangeSummary = {
+          purpose: incoming.purpose,
+          architectureReview: incoming.architectureReview,
+          potentialIssues: [...(incoming.potentialIssues || [])],
+        };
+        return;
+      }
+      if (!mergedChangeSummary.purpose && incoming.purpose) mergedChangeSummary.purpose = incoming.purpose;
+      if (!mergedChangeSummary.architectureReview && incoming.architectureReview) {
+        mergedChangeSummary.architectureReview = incoming.architectureReview;
+      }
+      for (const item of incoming.potentialIssues || []) {
+        if (!mergedChangeSummary.potentialIssues.includes(item)) {
+          mergedChangeSummary.potentialIssues.push(item);
+        }
+      }
+    };
 
     if (orderedFiles.length <= BATCH_SIZE || targetProvider.id === 'heuristic-only') {
       throwIfCancelled(ctx.signal);
@@ -128,6 +150,7 @@ export class StoryAgent {
       mergedTitle = single.title;
       mergedSynopsis = single.synopsis;
       mergedCommitMessage = single.suggestedCommitMessage;
+      mergeChangeSummary(single.changeSummary);
       intentionContext = single.intentionContext;
       collectedChapters.push(...(single.chapters || []));
     } else {
@@ -139,6 +162,7 @@ export class StoryAgent {
         if (!mergedTitle && batchStory.title) mergedTitle = batchStory.title;
         if (!mergedSynopsis && batchStory.synopsis) mergedSynopsis = batchStory.synopsis;
         if (!mergedCommitMessage && batchStory.suggestedCommitMessage) mergedCommitMessage = batchStory.suggestedCommitMessage;
+        mergeChangeSummary(batchStory.changeSummary);
         if (!intentionContext && batchStory.intentionContext) intentionContext = batchStory.intentionContext;
         collectedChapters.push(...(batchStory.chapters || []));
         onBatchProgress?.(collectedChapters);
@@ -187,13 +211,20 @@ export class StoryAgent {
       }
     }
 
+    const finalChapters = Array.from(chapterByPath.values());
+    const finalSynopsis = mergedSynopsis || '';
+    const finalChangeSummary = mergedChangeSummary || (
+      ctx.comparison ? synthesizeComparisonSummary(finalSynopsis, finalChapters, ctx) : undefined
+    );
+
     return {
       hadHeuristicFill,
       story: {
         title: mergedTitle || 'Review Walkthrough',
-        synopsis: mergedSynopsis || '',
+        synopsis: finalSynopsis,
+        ...(finalChangeSummary ? { changeSummary: finalChangeSummary } : {}),
         suggestedCommitMessage: mergedCommitMessage || 'feat: update changes',
-        chapters: Array.from(chapterByPath.values()),
+        chapters: finalChapters,
         intentionContext: intentionContext || (ctx.intention && ctx.intention.sources.length > 0 ? {
           summary: ctx.intention.summary,
           sources: ctx.intention.sources.map(source => source.title),
@@ -316,6 +347,7 @@ export class StoryAgent {
         const restoredStory: StoryNarrative = {
           title: cachedStory.title,
           synopsis: cachedStory.synopsis,
+          ...(cachedStory.changeSummary ? { changeSummary: cachedStory.changeSummary } : {}),
           suggestedCommitMessage: cachedStory.suggestedCommitMessage,
           intentionContext: cachedStory.intentionContext || (ctx.intention && ctx.intention.sources.length > 0 ? {
             summary: ctx.intention.summary,
@@ -401,6 +433,7 @@ export class StoryAgent {
           : `Structured review sequence covering ${chapters.length} file(s) with cached AI technical analysis.`,
         suggestedCommitMessage: generatedStory?.suggestedCommitMessage ||
           `refactor: update ${chapters.map(chapter => path.basename(chapter.filePath)).join(', ')}`,
+        ...(generatedStory?.changeSummary ? { changeSummary: generatedStory.changeSummary } : {}),
         chapters,
         intentionContext: generatedStory?.intentionContext || (ctx.intention && ctx.intention.sources.length > 0 ? {
           summary: ctx.intention.summary,

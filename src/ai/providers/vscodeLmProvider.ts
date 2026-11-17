@@ -3,6 +3,7 @@ import { DiffFile } from '../../diff/types';
 import { AIProvider, Chapter, ReviewContext, StoryNarrative } from '../types';
 import { OrderingEngine } from '../orderingEngine';
 import {
+  buildComparisonSummaryPromptSnippet,
   formatDiffsForPrompt,
   isCancellationError,
   parseProviderStoryResponse,
@@ -67,6 +68,8 @@ export class VSCodeLMProvider implements AIProvider {
       ? `comparing ${baseDesc} ("${ctx.comparison.base.subject}") to ${targetDesc} ("${ctx.comparison.target.subject}")`
       : `${ctx.branch || 'main'}`;
 
+    const comparisonSummarySnippet = buildComparisonSummaryPromptSnippet(ctx);
+
     const prompt = `You are a principal engineer conducting a structured code review walkthrough.
 Analyze these Git changes in repository "${ctx.repoName}" (${scopeDescription}).
 Organize the files into an optimal, logical review sequence (data contracts/schemas first, then business logic, then API endpoints, then UI, then tests/configs).
@@ -107,6 +110,7 @@ Respond strictly with valid JSON (no markdown fences, no extra text):
     }
   ]
 }
+${comparisonSummarySnippet}
 ${intentionBlock}
 ${repoDefensesBlock}
 

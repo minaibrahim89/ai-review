@@ -3,6 +3,7 @@ import { DiffFile } from '../../diff/types';
 import { AIProvider, Chapter, ReviewContext, StoryNarrative } from '../types';
 import { OrderingEngine } from '../orderingEngine';
 import {
+  buildComparisonSummaryPromptSnippet,
   createCombinedAbortSignal,
   formatDiffsForPrompt,
   isCancellationError,
@@ -70,6 +71,8 @@ export class OpenAIProvider implements AIProvider {
       ? `comparison ${baseDesc} ("${ctx.comparison.base.subject}") -> ${targetDesc} ("${ctx.comparison.target.subject}")`
       : `uncommitted Git changes`;
 
+    const comparisonSummarySnippet = buildComparisonSummaryPromptSnippet(ctx);
+
     const prompt = `You are a principal engineer conducting a structured code review walkthrough.
 Organize these Git changes (${targetLabel}) into an optimal, logical review sequence (data contracts/schemas first, then business logic, then API endpoints, UI, and tests/config).
 
@@ -109,6 +112,7 @@ Respond strictly in valid JSON:
     }
   ]
 }
+${comparisonSummarySnippet}
 ${intentionBlock}
 ${repoDefensesBlock}
 

@@ -74,9 +74,32 @@ export class HeuristicProvider implements AIProvider {
     const title = this.synthesizeStoryTitle(orderedNodes);
     const suggestedCommitMessage = this.generateCommitMessage(orderedNodes);
 
+    let changeSummary;
+    if (context.comparison) {
+      const baseLabel = context.comparison.base.label
+        ? `${context.comparison.base.label} (${context.comparison.base.shortHash})`
+        : context.comparison.base.shortHash;
+      const targetLabel = context.comparison.target.label
+        ? `${context.comparison.target.label} (${context.comparison.target.shortHash})`
+        : context.comparison.target.shortHash;
+      const roles = Array.from(new Set(orderedNodes.map(n => n.role)));
+      const aggregatedIssues = chapters.flatMap(ch =>
+        ch.issues.map(iss => `\`${ch.filePath}\`${iss.lineNumber ? `:${iss.lineNumber}` : ''} — **${iss.title}**: ${iss.description}`)
+      );
+
+      changeSummary = {
+        purpose: context.intention?.summary
+          ? `Compares \`${baseLabel}\` → \`${targetLabel}\` (${fileCount} file${fileCount === 1 ? '' : 's'}). ${context.intention.summary}`
+          : `Compares repository states from \`${baseLabel}\` to \`${targetLabel}\` across ${fileCount} changed file${fileCount === 1 ? '' : 's'}.`,
+        architectureReview: `Changes span ${fileCount} file${fileCount === 1 ? '' : 's'} (**+${totalAdditions}** / **-${totalDeletions}**) across ${roles.join(', ')}.`,
+        potentialIssues: aggregatedIssues.slice(0, 8),
+      };
+    }
+
     return {
       title,
       synopsis,
+      ...(changeSummary ? { changeSummary } : {}),
       chapters,
       suggestedCommitMessage,
       intentionContext: context.intention && context.intention.sources.length > 0 ? {

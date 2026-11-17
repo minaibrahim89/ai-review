@@ -128,9 +128,16 @@ export interface ReviewContext {
   signal?: AbortSignal;
 }
 
+export interface ChangeSummary {
+  purpose: string;
+  architectureReview: string;
+  potentialIssues: string[];
+}
+
 export interface StoryNarrative {
   title: string;
   synopsis: string;
+  changeSummary?: ChangeSummary;
   chapters: ReviewStep[];
   suggestedCommitMessage: string;
   intentionContext?: {

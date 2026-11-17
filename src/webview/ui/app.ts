@@ -74,6 +74,11 @@ const elements = {
 
   // Main Walkthrough Viewport
   walkthroughViewport: document.getElementById('walkthrough-viewport') as HTMLElement,
+  branchSummaryCard: document.getElementById('branch-summary-card') as HTMLElement,
+  branchSummaryRange: document.getElementById('branch-summary-range') as HTMLElement,
+  branchSummaryPurpose: document.getElementById('branch-summary-purpose') as HTMLElement,
+  branchSummaryArchitecture: document.getElementById('branch-summary-architecture') as HTMLElement,
+  branchSummaryIssues: document.getElementById('branch-summary-issues') as HTMLElement,
 
   // File Card
   fileStatusBadge: document.getElementById('file-status-badge') as HTMLElement,
@@ -544,6 +549,40 @@ function updateComparisonHeader() {
   }
 }
 
+function renderBranchSummary() {
+  const summary = state.story?.changeSummary;
+  if (state.scope !== 'commits' || !summary) {
+    elements.branchSummaryCard.hidden = true;
+    return;
+  }
+
+  elements.branchSummaryCard.hidden = false;
+  if (state.comparison) {
+    elements.branchSummaryRange.textContent = `${formatCompareRefShort(state.comparison.base)} ↔ ${formatCompareRefShort(state.comparison.target)}`;
+  } else {
+    elements.branchSummaryRange.textContent = '';
+  }
+
+  elements.branchSummaryPurpose.innerHTML = formatMarkdown(summary.purpose || state.story?.synopsis || '');
+  elements.branchSummaryArchitecture.innerHTML = formatMarkdown(summary.architectureReview || '');
+
+  elements.branchSummaryIssues.innerHTML = '';
+  const issues = summary.potentialIssues || [];
+  if (issues.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'branch-summary-issues-empty';
+    li.textContent = 'No major cross-cutting issues detected.';
+    elements.branchSummaryIssues.appendChild(li);
+  } else {
+    for (const issueText of issues) {
+      const li = document.createElement('li');
+      li.className = 'key-point-item';
+      li.innerHTML = formatInlineMarkdown(issueText);
+      elements.branchSummaryIssues.appendChild(li);
+    }
+  }
+}
+
 function renderStory() {
   const pendingCount = state.story?.chapters.filter(chapter => chapter.isPending).length || 0;
   if (pendingCount > 0) {
@@ -553,6 +592,7 @@ function renderStory() {
   }
 
   updateComparisonHeader();
+  renderBranchSummary();
 
   if (!state.story || state.story.chapters.length === 0) {
     renderEmptyState();
@@ -906,6 +946,18 @@ function appendAiAnswer(question: string, answer: string) {
 
 function openSynopsisModal() {
   let synopsisHtml = formatMarkdown(state.story?.synopsis || 'No overview available.');
+  if (state.story?.changeSummary) {
+    const { purpose, architectureReview, potentialIssues } = state.story.changeSummary;
+    const issuesHtml = potentialIssues.length > 0
+      ? `<ul>${potentialIssues.map(i => `<li>${formatInlineMarkdown(i)}</li>`).join('')}</ul>`
+      : '<p class="prose-p">No major cross-cutting issues detected.</p>';
+    synopsisHtml =
+      `<h4>Purpose</h4>${formatMarkdown(purpose)}` +
+      `<h4>Architecture Review</h4>${formatMarkdown(architectureReview)}` +
+      `<h4>Potential Issues</h4>${issuesHtml}` +
+      `<hr/>` +
+      synopsisHtml;
+  }
   if (state.story?.intentionContext) {
     const { summary, sources } = state.story.intentionContext;
     synopsisHtml = `<div class="intention-overview-callout">` +

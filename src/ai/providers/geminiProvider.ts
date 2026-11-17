@@ -3,6 +3,7 @@ import { DiffFile } from '../../diff/types';
 import { AIProvider, Chapter, ReviewContext, StoryNarrative } from '../types';
 import { OrderingEngine } from '../orderingEngine';
 import {
+  buildComparisonSummaryPromptSnippet,
   createCombinedAbortSignal,
   formatDiffsForPrompt,
   isCancellationError,
@@ -102,12 +103,14 @@ Return strictly valid JSON with this schema:
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
+    const comparisonSummarySnippet = buildComparisonSummaryPromptSnippet(ctx);
+
     const requestBody = {
       contents: [
         {
           role: 'user',
           parts: [
-            { text: `${systemPrompt}${intentionBlock}${repoDefensesBlock}\n\nRepository: ${ctx.repoName}\n${ctx.comparison ? `Comparison: ${ctx.comparison.base.shortHash} -> ${ctx.comparison.target.shortHash}` : `Branch: ${ctx.branch || 'main'}`}\n\nDiff Content:\n${diffSummaries}` }
+            { text: `${systemPrompt}${comparisonSummarySnippet}${intentionBlock}${repoDefensesBlock}\n\nRepository: ${ctx.repoName}\n${ctx.comparison ? `Comparison: ${ctx.comparison.base.shortHash} -> ${ctx.comparison.target.shortHash}` : `Branch: ${ctx.branch || 'main'}`}\n\nDiff Content:\n${diffSummaries}` }
           ]
         }
       ],

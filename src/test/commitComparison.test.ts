@@ -474,12 +474,19 @@ test('webview UI renders commit comparison controls, hides working-tree actions,
     targetRef: 'feature/auth',
   });
 
-  // Render active branch comparison with branch labels
+  // Render active branch comparison with branch labels and changeSummary
   onMessage({
     data: {
       type: 'init',
       payload: {
-        story,
+        story: {
+          ...story,
+          changeSummary: {
+            purpose: 'Adds branch authentication flow.',
+            architectureReview: 'Separates auth middleware from controllers.',
+            potentialIssues: ['Token expiry edge case on clock skew'],
+          },
+        },
         providerName: 'Heuristic',
         currentRepo: { rootUri: '/repo', name: 'repo', headBranch: 'feature/auth' },
         repos: [],
@@ -495,6 +502,27 @@ test('webview UI renders commit comparison controls, hides working-tree actions,
   assert.equal(getEl('repo-branch').textContent, 'main ↔ feature/auth');
   assert.ok(getEl('compare-base-badge').textContent.startsWith('main (1111111)'));
   assert.ok(getEl('compare-target-badge').textContent.startsWith('feature/auth (2222222)'));
+  assert.equal(getEl('branch-summary-card').hidden, false);
+  assert.equal(getEl('branch-summary-range').textContent, 'main ↔ feature/auth');
+  assert.ok(getEl('branch-summary-purpose').innerHTML.includes('Adds branch authentication flow.'));
+  assert.ok(getEl('branch-summary-architecture').innerHTML.includes('Separates auth middleware'));
+  assert.equal(getEl('branch-summary-issues').children.length, 1);
+
+  // Switching back to working tree hides branch-summary-card
+  onMessage({
+    data: {
+      type: 'init',
+      payload: {
+        story,
+        providerName: 'Heuristic',
+        currentRepo: { rootUri: '/repo', name: 'repo', headBranch: 'feature/auth' },
+        repos: [],
+        scope: 'all' as DiffScope,
+        themeStyle: 'zen',
+      },
+    },
+  });
+  assert.equal(getEl('branch-summary-card').hidden, true);
 });
 
 test('GitService.getBranches and buildCommitsListPayload list branches and preserve branch labels', async () => {

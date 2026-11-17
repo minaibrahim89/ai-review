@@ -86,6 +86,30 @@
     <!-- Main Walkthrough Container -->
     <main class="walkthrough-viewport" id="walkthrough-viewport">
       <div class="walkthrough-content">
+        <!-- Branch / State Comparison Summary Card -->
+        <section id="branch-summary-card" class="section-card branch-summary-card" aria-labelledby="branch-summary-heading" hidden>
+          <details id="branch-summary-details" class="branch-summary-details" open>
+            <summary class="branch-summary-toggle">
+              <span id="branch-summary-heading" class="branch-summary-title">Branch &amp; State Comparison Summary</span>
+              <span id="branch-summary-range" class="branch-summary-range"></span>
+            </summary>
+            <div class="branch-summary-body">
+              <div class="branch-summary-block">
+                <h3 class="branch-summary-subheading">Purpose</h3>
+                <div id="branch-summary-purpose" class="branch-summary-prose"></div>
+              </div>
+              <div class="branch-summary-block">
+                <h3 class="branch-summary-subheading">Architecture Review</h3>
+                <div id="branch-summary-architecture" class="branch-summary-prose"></div>
+              </div>
+              <div class="branch-summary-block">
+                <h3 class="branch-summary-subheading">Potential Issues</h3>
+                <ul id="branch-summary-issues" class="key-points-list branch-summary-issues-list"></ul>
+              </div>
+            </div>
+          </details>
+        </section>
+
         <!-- File Info Bar -->
         <div class="file-card">
           <div class="file-card-main">
